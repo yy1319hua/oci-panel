@@ -1,0 +1,13 @@
+.git
+.gitignore
+.idea
+.factory
+*.exe
+*.db
+db/*.db
+keys/
+frontend/node_modules
+frontend/dist
+screenshots
+README.md
+LICENSE

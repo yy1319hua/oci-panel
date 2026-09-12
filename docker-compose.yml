@@ -1,0 +1,21 @@
+services:
+  oci-panel:
+    image: adiecho/oci-panel:latest
+    container_name: oci-panel
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8999:8999"
+    volumes:
+      - ./config.toml:/app/config.toml:ro
+      - ./db:/app/db
+      - ./keys:/app/keys
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - TZ=Asia/Shanghai
+      - GIN_MODE=release

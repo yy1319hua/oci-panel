@@ -1,0 +1,58 @@
+# Binaries
+oci-panel
+oci-panel.exe
+oci-panel-*
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Build output
+dist/
+
+# Test binary
+*.test
+
+# Output
+*.out
+
+# Go workspace file
+go.work
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Keys
+keys/*
+!keys/.gitkeep
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local
+
+# Config
+config.toml
+/keys/.gitkeep
+/frontend/.postcssrc.json
+.omc/
