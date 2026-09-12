@@ -584,6 +584,29 @@ useMotion(headerRef, { initial: { opacity: 0, y: -20 }, enter: { opacity: 1, y: 
         <DialogTitle>{{ editingConfig ? '编辑配置' : '添加OCI配置' }}</DialogTitle>
         <DialogDescription>{{ editingConfig ? '修改现有配置信息' : '添加新的Oracle Cloud配置' }}</DialogDescription>
       </DialogHeader>
+
+      <!-- 甲骨文 API 信息获取指引（可展开） -->
+      <details class="rounded-lg border border-border bg-muted/40 p-3 text-sm">
+        <summary class="cursor-pointer select-none font-medium text-primary">
+          如何获取甲骨文（Oracle Cloud）API 信息？
+        </summary>
+        <div class="mt-3 space-y-2 text-muted-foreground leading-relaxed">
+          <p>本面板通过 Oracle 官方 API 管理云资源，需要一份 <b class="text-foreground">API 密钥</b>。在 Oracle Cloud 控制台按以下步骤获取：</p>
+          <ol class="list-decimal pl-5 space-y-1">
+            <li>登录 <a href="https://console.us-ashburn-1.oraclecloud.com" target="_blank" rel="noopener" class="text-primary hover:underline">Oracle Cloud 控制台</a></li>
+            <li>右上角头像 → <b>用户设置</b>，左侧找到 <b>API Keys</b></li>
+            <li>点 <b>Add API Key</b> → 选 <b>Generate API Key Pair</b></li>
+            <li>下载 <b>.pem 私钥</b>（留作下方「密钥文件」），并复制页面显示的 <b>Configuration File Preview</b></li>
+            <li>把预览里的 <code class="px-1 bg-background rounded">user=</code> / <code class="px-1 bg-background rounded">fingerprint=</code> / <code class="px-1 bg-background rounded">tenancy=</code> / <code class="px-1 bg-background rounded">region=</code> 四行粘贴到下方「配置内容」</li>
+            <li>把下载的 <b>.pem 私钥</b> 拖到下方「密钥文件」</li>
+          </ol>
+          <p class="text-xs pt-1">
+            建议为面板单独建一个<b>最小权限用户</b>，密钥泄露也只影响该用户。详见
+            <a href="https://docs.oracle.com/en-us/iaas/Content/API/Concepts/apisigningkey.htm" target="_blank" rel="noopener" class="text-primary hover:underline">Oracle 官方文档</a>。
+          </p>
+        </div>
+      </details>
+
       <form class="space-y-4" @submit.prevent="submitForm">
         <div>
           <label class="block text-sm font-medium mb-2">配置名称</label>
@@ -598,7 +621,11 @@ useMotion(headerRef, { initial: { opacity: 0, y: -20 }, enter: { opacity: 1, y: 
             placeholder="user=ocid1.user.oc1..xxx&#10;fingerprint=xx:xx:xx&#10;tenancy=ocid1.tenancy.oc1..xxx&#10;region=ap-singapore-1"
             required
           />
-          <p class="text-xs text-muted-foreground mt-2">格式：user、fingerprint、tenancy、region（每行一个）</p>
+          <p class="text-xs text-muted-foreground mt-2">
+            直接粘贴 Oracle 控制台 <b>API Keys → Add API Key</b> 显示的 <b>Configuration File Preview</b>
+            （<code class="px-1 bg-background rounded">user</code> / <code class="px-1 bg-background rounded">fingerprint</code> /
+            <code class="px-1 bg-background rounded">tenancy</code> / <code class="px-1 bg-background rounded">region</code> 四行，可含 [DEFAULT]）。
+          </p>
         </div>
         <div>
           <label class="block text-sm font-medium mb-2">密钥文件</label>
@@ -616,7 +643,7 @@ useMotion(headerRef, { initial: { opacity: 0, y: -20 }, enter: { opacity: 1, y: 
             <div v-if="!uploadedFile">
               <Upload class="mx-auto h-10 w-10 text-muted-foreground mb-2" />
               <p class="text-sm text-muted-foreground">点击或拖拽文件</p>
-              <p class="text-xs text-muted-foreground mt-1">支持 .pem 或 .key</p>
+              <p class="text-xs text-muted-foreground mt-1">即上一步下载的 .pem 私钥文件（仅本面板使用，不会外传）</p>
             </div>
             <div v-else class="flex items-center justify-between">
               <div class="flex items-center gap-3">

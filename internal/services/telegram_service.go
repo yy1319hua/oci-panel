@@ -640,7 +640,7 @@ func (s *TelegramService) getConfigList() string {
 }
 
 func (s *TelegramService) getVersionInfo() string {
-	return fmt.Sprintf("【版本信息】\n\n📦 应用名称：OCI Panel\n🏷️ 当前版本：v1.0.0\n🔧 后端框架：Gin (Go)\n🎨 前端框架：Vue 3 + Vite\n💾 数据库：SQLite\n\n🕐 查询时间：%s",
+	return fmt.Sprintf("【版本信息】\n\n📦 应用名称：OCI Panel\n🏷️ 当前版本：v1.0.1\n🔧 后端框架：Gin (Go)\n🎨 前端框架：Vue 3 + Vite\n💾 数据库：SQLite\n\n🕐 查询时间：%s",
 		time.Now().Format("2006-01-02 15:04:05"))
 }
 
