@@ -118,6 +118,7 @@ func Setup(r *gin.Engine, cfg *config.Config) *Services {
 			oci.POST("/traffic/data", ociCtrl.GetTrafficData)
 			oci.GET("/traffic/condition", ociCtrl.GetTrafficCondition)
 			oci.GET("/traffic/vnics", ociCtrl.GetInstanceVnics)
+			oci.POST("/traffic/monthly", ociCtrl.GetMonthlyTraffic)
 			oci.POST("/vcn/securityList", ociCtrl.GetSecurityList)
 			oci.POST("/vcn/addSecurityRule", ociCtrl.AddSecurityRule)
 			oci.POST("/vcn/releaseSecurityRules", ociCtrl.ReleaseSecurityRules)

@@ -26,11 +26,37 @@ const version = ref('')
 const configId = ref('')
 
 const instances = ref<InstanceInfo[]>([])
-const traffic = ref<{ inbound: number; outbound: number; unit: string; series: number[] }>({
-  inbound: 0,
-  outbound: 0,
-  unit: 'MB',
-  series: []
+
+const INSTANCE_COLORS = ['#22d3ee', '#34d399', '#fbbf24', '#a78bfa', '#f472b6']
+
+interface TrafficInstance {
+  id: string
+  name: string
+  total: number
+  inbound: number
+  outbound: number
+  pct: number
+  color: string
+}
+
+const traffic = ref<{
+  totalBytes: number
+  inboundBytes: number
+  outboundBytes: number
+  billableBytes: number
+  freeAllowance: number
+  allowancePct: number
+  instances: TrafficInstance[]
+  daily: number[]
+}>({
+  totalBytes: 0,
+  inboundBytes: 0,
+  outboundBytes: 0,
+  billableBytes: 0,
+  freeAllowance: 0,
+  allowancePct: 0,
+  instances: [],
+  daily: []
 })
 
 const hasInstance = computed(() => instances.value.length > 0)
@@ -74,18 +100,22 @@ const formatUptime = (createTime?: string) => {
   return `${m} 分钟`
 }
 
-const fmtTime = (d: Date) => {
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+// 字节格式化为人类可读（B/KB/MB/GB/TB）
+const formatBytes = (bytes: number) => {
+  let v = bytes || 0
+  if (v < 0) v = 0
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let i = 0
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024
+    i++
+  }
+  return { value: v.toFixed(2), unit: units[i] }
 }
 
-const formatTraffic = (mb: number) => {
-  if (mb >= 1024) return { value: (mb / 1024).toFixed(2), unit: 'GB' }
-  return { value: mb.toFixed(2), unit: 'MB' }
-}
-
+// 逐日合计的趋势线（方案 A 的 sparkline）
 const sparkPoints = computed(() => {
-  const s = traffic.value.series
+  const s = traffic.value.daily
   if (!s.length) return ''
   const max = Math.max(...s, 0.0001)
   const n = s.length
@@ -134,28 +164,34 @@ const loadOverview = async () => {
       instances.value = []
     }
 
-    // 3. 近 24h 流量（best-effort）
+    // 3. 账号级月度流量（总流量 + 每实例明细 + 实际/计费）
     try {
-      const cond = await ociApi.trafficCondition(cfg.id)
-      const inst = cond.data.instances?.[0]
-      if (inst) {
-        const vnics = await ociApi.trafficVnics({ configId: cfg.id, instanceId: inst.value })
-        const vnic = vnics.data?.[0]
-        if (vnic) {
-          const end = new Date()
-          const start = new Date(end.getTime() - 24 * 3600 * 1000)
-          const data = await ociApi.trafficData({
-            configId: cfg.id,
-            instanceId: inst.value,
-            vnicId: vnic.value,
-            startTime: fmtTime(start),
-            endTime: fmtTime(end)
-          })
-          const inbound = (data.data.inbound || []).reduce((s, v) => s + (parseFloat(v) || 0), 0)
-          const outbound = (data.data.outbound || []).reduce((s, v) => s + (parseFloat(v) || 0), 0)
-          const f = formatTraffic(inbound + outbound)
-          traffic.value = { inbound, outbound, unit: f.unit, series: data.data.outbound?.map(v => parseFloat(v) || 0) || [] }
+      const mRes = await ociApi.monthlyTraffic(cfg.id)
+      const m = mRes.data
+      const total = (m.inboundTraffic || 0) + (m.outboundTraffic || 0)
+      const insts: TrafficInstance[] = (m.instances || []).map((it, i) => {
+        const t = (it.inbound || 0) + (it.outbound || 0)
+        return {
+          id: it.instanceId,
+          name: it.displayName || it.instanceId,
+          total: t,
+          inbound: it.inbound || 0,
+          outbound: it.outbound || 0,
+          pct: total > 0 ? Math.round((t / total) * 100) : 0,
+          color: INSTANCE_COLORS[i % INSTANCE_COLORS.length]
         }
+      })
+      const daily = (m.dailyLabels || []).map((_, i) => (m.dailyInbound[i] || 0) + (m.dailyOutbound[i] || 0))
+      const allowancePct = m.freeAllowance > 0 ? Math.min(100, (total / m.freeAllowance) * 100) : 0
+      traffic.value = {
+        totalBytes: total,
+        inboundBytes: m.inboundTraffic || 0,
+        outboundBytes: m.outboundTraffic || 0,
+        billableBytes: m.billableTraffic || 0,
+        freeAllowance: m.freeAllowance || 0,
+        allowancePct,
+        instances: insts,
+        daily
       }
     } catch {
       /* 流量查询失败不阻断概览 */
@@ -260,27 +296,59 @@ onMounted(() => {
         <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle class="flex items-center gap-2 text-base">
             <TrendingUp class="w-5 h-5 text-primary" />
-            流量概览（近 24 小时）
+            流量概览（本月 · 账号汇总）
           </CardTitle>
           <ArrowRight class="w-4 h-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
           <div class="flex items-end gap-8">
             <div>
-              <p class="text-sm text-muted-foreground">入站</p>
-              <p class="text-2xl font-bold font-display">{{ traffic.inbound.toFixed(2) }}<span class="text-base ml-1 text-muted-foreground">{{ traffic.unit }}</span></p>
+              <p class="text-sm text-muted-foreground">总流量（实际）</p>
+              <p class="text-2xl font-bold font-display">
+                {{ formatBytes(traffic.totalBytes).value }}<span class="text-base ml-1 text-muted-foreground">{{ formatBytes(traffic.totalBytes).unit }}</span>
+              </p>
             </div>
             <div>
-              <p class="text-sm text-muted-foreground">出站</p>
-              <p class="text-2xl font-bold font-display">{{ traffic.outbound.toFixed(2) }}<span class="text-base ml-1 text-muted-foreground">{{ traffic.unit }}</span></p>
+              <p class="text-sm text-muted-foreground">计费</p>
+              <p class="text-2xl font-bold font-display">
+                {{ formatBytes(traffic.billableBytes).value }}<span class="text-base ml-1 text-muted-foreground">{{ formatBytes(traffic.billableBytes).unit }}</span>
+              </p>
             </div>
           </div>
-          <div class="mt-4 h-[30px] w-full">
-            <svg v-if="sparkPoints" viewBox="0 0 100 30" preserveAspectRatio="none" class="w-full h-full">
-              <polyline :points="sparkPoints" fill="none" stroke="rgb(34 211 238)" stroke-width="1.5" vector-effect="non-scaling-stroke" />
-            </svg>
-            <div v-else class="h-full flex items-center text-xs text-muted-foreground">暂无流量数据</div>
+
+          <div class="mt-4 flex items-center justify-between text-xs text-muted-foreground">
+            <span>免费额度 {{ formatBytes(traffic.freeAllowance).value }} {{ formatBytes(traffic.freeAllowance).unit }} · 已用 {{ traffic.allowancePct.toFixed(1) }}%</span>
+            <span class="text-emerald-400">入 {{ formatBytes(traffic.inboundBytes).value }}{{ formatBytes(traffic.inboundBytes).unit }} / 出 {{ formatBytes(traffic.outboundBytes).value }}{{ formatBytes(traffic.outboundBytes).unit }}</span>
           </div>
+          <div class="mt-1 h-2 rounded-full bg-slate-800 overflow-hidden">
+            <div class="h-full rounded-full" :style="{ width: traffic.allowancePct + '%', background: 'linear-gradient(90deg,#22d3ee,#34d399)' }"></div>
+          </div>
+
+          <svg v-if="sparkPoints" viewBox="0 0 100 30" preserveAspectRatio="none" class="w-full h-[44px] mt-4">
+            <polyline :points="sparkPoints" fill="none" stroke="#22d3ee" stroke-width="1.5" vector-effect="non-scaling-stroke" />
+          </svg>
+          <div v-else class="h-[44px] mt-4 flex items-center text-xs text-muted-foreground">暂无流量数据</div>
+
+          <!-- 每实例占比 -->
+          <div v-if="traffic.instances.length" class="mt-4 space-y-3">
+            <div
+              v-for="inst in traffic.instances"
+              :key="inst.id"
+              class="grid grid-cols-[120px_1fr_120px] items-center gap-3 text-sm"
+            >
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="w-2.5 h-2.5 rounded-full shrink-0" :style="{ background: inst.color }"></span>
+                <span class="truncate text-foreground/90">{{ inst.name }}</span>
+              </div>
+              <div class="h-2 rounded-full bg-slate-800 overflow-hidden">
+                <div class="h-full rounded-full" :style="{ width: inst.pct + '%', background: inst.color }"></div>
+              </div>
+              <div class="text-right text-muted-foreground tabular-nums">
+                {{ formatBytes(inst.total).value }} {{ formatBytes(inst.total).unit }} · {{ inst.pct }}%
+              </div>
+            </div>
+          </div>
+          <div v-else class="mt-4 text-xs text-muted-foreground">暂无实例流量明细</div>
         </CardContent>
       </Card>
 

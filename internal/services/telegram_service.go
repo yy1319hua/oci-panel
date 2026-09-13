@@ -664,10 +664,11 @@ func (s *TelegramService) getTrafficStats() string {
 		if err != nil {
 			return fmt.Sprintf("❌ %s: 获取失败", user.Username)
 		}
-		return fmt.Sprintf("🔑 配置名：【%s】\n🌏 主区域：【%s】\n🖥️ 实例数量：【%d】台\n⬇️ 本月入站流量：%s\n⬆️ 本月出站流量：%s",
+		return fmt.Sprintf("🔑 配置名：【%s】\n🌏 主区域：【%s】\n🖥️ 实例数量：【%d】台\n⬇️ 本月入站流量：%s\n⬆️ 本月出站流量：%s\n💰 本月计费流量：%s",
 			user.Username, user.OciRegion, trafficStats.InstanceCount,
 			FormatBytes(trafficStats.InboundTraffic),
-			FormatBytes(trafficStats.OutboundTraffic))
+			FormatBytes(trafficStats.OutboundTraffic),
+			FormatBytes(trafficStats.BillableTraffic))
 	})
 
 	var stats []string

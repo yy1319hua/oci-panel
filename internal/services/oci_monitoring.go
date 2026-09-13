@@ -145,14 +145,33 @@ func parseTime(timeStr string) time.Time {
 	return time.Now().UTC().Add(-1 * time.Hour)
 }
 
-// MonthlyTrafficStats 月度流量统计结果
-type MonthlyTrafficStats struct {
-	InstanceCount   int
-	InboundTraffic  int64
-	OutboundTraffic int64
+// InstanceTrafficStat 单实例流量明细（单位：字节）。
+type InstanceTrafficStat struct {
+	InstanceID  string `json:"instanceId"`
+	DisplayName string `json:"displayName"`
+	Inbound     int64  `json:"inbound"`  // 实际入站
+	Outbound    int64  `json:"outbound"` // 实际出站
+	Billable    int64  `json:"billable"` // 计费出站（免费额度外）
 }
 
-// GetMonthlyTrafficStats 获取指定配置的月度流量统计
+// FreeTierAllowanceBytes Oracle Always Free 出站免费额度（因区域而异，常见 200GB 或 10TB），按需调整。
+const FreeTierAllowanceBytes int64 = 200 * 1024 * 1024 * 1024
+
+// MonthlyTrafficStats 月度流量统计结果（账号级汇总 + 每实例明细 + 实际/计费区分）。
+type MonthlyTrafficStats struct {
+	InstanceCount   int                   `json:"instanceCount"`
+	InboundTraffic  int64                 `json:"inboundTraffic"`
+	OutboundTraffic int64                 `json:"outboundTraffic"`
+	BillableTraffic int64                 `json:"billableTraffic"`
+	FreeAllowance   int64                 `json:"freeAllowance"`
+	Instances       []InstanceTrafficStat `json:"instances"`
+	DailyLabels     []string              `json:"dailyLabels"`
+	DailyInbound    []int64               `json:"dailyInbound"`
+	DailyOutbound   []int64               `json:"dailyOutbound"`
+}
+
+// GetMonthlyTrafficStats 获取指定配置的月度流量统计（账号级汇总 + 每实例明细 + 实际/计费区分）。
+// 按账号维度遍历所有实例与其 VNIC，累加实际入站/出站与计费出站，并采集逐日序列用于趋势。
 func (s *OCIService) GetMonthlyTrafficStats(ctx context.Context, user *models.OciUser) (*MonthlyTrafficStats, error) {
 	computeClient, err := s.GetComputeClient(user)
 	if err != nil {
@@ -170,7 +189,7 @@ func (s *OCIService) GetMonthlyTrafficStats(ctx context.Context, user *models.Oc
 	}
 
 	compartmentId := user.OciTenantID
-	stats := &MonthlyTrafficStats{}
+	stats := &MonthlyTrafficStats{FreeAllowance: FreeTierAllowanceBytes}
 
 	// 获取实例列表
 	instances, err := s.ListInstances(ctx, user, compartmentId)
@@ -184,13 +203,22 @@ func (s *OCIService) GetMonthlyTrafficStats(ctx context.Context, user *models.Oc
 	startOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 	endOfMonth := startOfMonth.AddDate(0, 1, 0).Add(-time.Second)
 
-	// 遍历每个实例获取VNIC流量
+	// 逐日累计（用于趋势 sparkline）
+	dailyInbound := map[string]int64{}
+	dailyOutbound := map[string]int64{}
+
+	// 遍历每个实例获取 VNIC 流量
 	for _, instance := range instances {
 		if instance.Id == nil {
 			continue
 		}
 
-		// 获取实例的VNIC附件
+		instStat := InstanceTrafficStat{InstanceID: *instance.Id}
+		if instance.DisplayName != nil {
+			instStat.DisplayName = *instance.DisplayName
+		}
+
+		// 获取实例的 VNIC 附件
 		vnicAttachReq := core.ListVnicAttachmentsRequest{
 			CompartmentId: &compartmentId,
 			InstanceId:    instance.Id,
@@ -205,7 +233,7 @@ func (s *OCIService) GetMonthlyTrafficStats(ctx context.Context, user *models.Oc
 				continue
 			}
 
-			// 获取VNIC信息
+			// 获取 VNIC 信息
 			vnicReq := core.GetVnicRequest{VnicId: attach.VnicId}
 			vnicResp, err := vnClient.GetVnic(ctx, vnicReq)
 			if err != nil {
@@ -218,8 +246,8 @@ func (s *OCIService) GetMonthlyTrafficStats(ctx context.Context, user *models.Oc
 
 			vnicId := *vnicResp.Id
 
-			// 查询入站流量 (VnicToNetworkBytes)
-			inQuery := fmt.Sprintf("VnicToNetworkBytes[1d]{resourceId = \"%s\"}.sum()", vnicId)
+			// 入站（实际）：VnicFromNetworkBytes（从网络到 VNIC = 入站）
+			inQuery := fmt.Sprintf("VnicFromNetworkBytes[1d]{resourceId = \"%s\"}.sum()", vnicId)
 			inReq := monitoring.SummarizeMetricsDataRequest{
 				CompartmentId: &compartmentId,
 				SummarizeMetricsDataDetails: monitoring.SummarizeMetricsDataDetails{
@@ -229,19 +257,24 @@ func (s *OCIService) GetMonthlyTrafficStats(ctx context.Context, user *models.Oc
 					EndTime:   &common.SDKTime{Time: endOfMonth},
 				},
 			}
-			inResp, err := monitoringClient.SummarizeMetricsData(ctx, inReq)
-			if err == nil {
+			if inResp, e := monitoringClient.SummarizeMetricsData(ctx, inReq); e == nil {
 				for _, item := range inResp.Items {
 					for _, dp := range item.AggregatedDatapoints {
-						if dp.Value != nil {
-							stats.InboundTraffic += int64(*dp.Value)
+						if dp.Value == nil {
+							continue
+						}
+						v := int64(*dp.Value)
+						stats.InboundTraffic += v
+						instStat.Inbound += v
+						if dp.Timestamp != nil {
+							dailyInbound[dp.Timestamp.UTC().Format("2006-01-02")] += v
 						}
 					}
 				}
 			}
 
-			// 查询出站流量 (VnicFromNetworkBytes)
-			outQuery := fmt.Sprintf("VnicFromNetworkBytes[1d]{resourceId = \"%s\"}.sum()", vnicId)
+			// 出站（实际）：VnicToNetworkBytes（从 VNIC 到网络 = 出站）
+			outQuery := fmt.Sprintf("VnicToNetworkBytes[1d]{resourceId = \"%s\"}.sum()", vnicId)
 			outReq := monitoring.SummarizeMetricsDataRequest{
 				CompartmentId: &compartmentId,
 				SummarizeMetricsDataDetails: monitoring.SummarizeMetricsDataDetails{
@@ -251,17 +284,59 @@ func (s *OCIService) GetMonthlyTrafficStats(ctx context.Context, user *models.Oc
 					EndTime:   &common.SDKTime{Time: endOfMonth},
 				},
 			}
-			outResp, err := monitoringClient.SummarizeMetricsData(ctx, outReq)
-			if err == nil {
+			if outResp, e := monitoringClient.SummarizeMetricsData(ctx, outReq); e == nil {
 				for _, item := range outResp.Items {
 					for _, dp := range item.AggregatedDatapoints {
+						if dp.Value == nil {
+							continue
+						}
+						v := int64(*dp.Value)
+						stats.OutboundTraffic += v
+						instStat.Outbound += v
+						if dp.Timestamp != nil {
+							dailyOutbound[dp.Timestamp.UTC().Format("2006-01-02")] += v
+						}
+					}
+				}
+			}
+
+			// 计费出站（best-effort）：VnicBillableBytesOut（免费额度外才计费，额度内为 0）
+			billQuery := fmt.Sprintf("VnicBillableBytesOut[1d]{resourceId = \"%s\"}.sum()", vnicId)
+			billReq := monitoring.SummarizeMetricsDataRequest{
+				CompartmentId: &compartmentId,
+				SummarizeMetricsDataDetails: monitoring.SummarizeMetricsDataDetails{
+					Namespace: stringPtr("oci_vcn"),
+					Query:     &billQuery,
+					StartTime: &common.SDKTime{Time: startOfMonth},
+					EndTime:   &common.SDKTime{Time: endOfMonth},
+				},
+			}
+			if billResp, e := monitoringClient.SummarizeMetricsData(ctx, billReq); e == nil {
+				for _, item := range billResp.Items {
+					for _, dp := range item.AggregatedDatapoints {
 						if dp.Value != nil {
-							stats.OutboundTraffic += int64(*dp.Value)
+							v := int64(*dp.Value)
+							stats.BillableTraffic += v
+							instStat.Billable += v
 						}
 					}
 				}
 			}
 		}
+
+		stats.Instances = append(stats.Instances, instStat)
+	}
+
+	// 构建按天排序的日序列
+	labels := make([]string, 0, len(dailyInbound))
+	for d := range dailyInbound {
+		labels = append(labels, d)
+	}
+	sort.Strings(labels)
+	stats.DailyLabels = labels
+	for _, l := range labels {
+		stats.DailyInbound = append(stats.DailyInbound, dailyInbound[l])
+		stats.DailyOutbound = append(stats.DailyOutbound, dailyOutbound[l])
 	}
 
 	return stats, nil

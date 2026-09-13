@@ -83,6 +83,28 @@ export interface TrafficData {
   outbound: string[]
 }
 
+/** 单实例流量明细（字节）。 */
+export interface InstanceTrafficStat {
+  instanceId: string
+  displayName: string
+  inbound: number
+  outbound: number
+  billable: number
+}
+
+/** 账号级月度流量（实际 + 计费 + 每实例明细 + 逐日序列）。 */
+export interface MonthlyTrafficStats {
+  instanceCount: number
+  inboundTraffic: number
+  outboundTraffic: number
+  billableTraffic: number
+  freeAllowance: number
+  instances: InstanceTrafficStat[]
+  dailyLabels: string[]
+  dailyInbound: number[]
+  dailyOutbound: number[]
+}
+
 /** VCN 安全列表（入/出站规则，字段由后端定义，保持宽松）。 */
 export interface SecurityListData {
   ingressRules?: unknown[]
@@ -142,7 +164,8 @@ export const ociApi = {
   trafficVnics: (req: { configId: string; instanceId: string }) =>
     get<ValueLabel[]>('/oci/traffic/vnics', { params: req }),
   trafficData: (req: { configId: string; instanceId: string; vnicId: string; startTime: string; endTime: string }) =>
-    post<TrafficData>('/oci/traffic/data', req)
+    post<TrafficData>('/oci/traffic/data', req),
+  monthlyTraffic: (configId: string) => post<MonthlyTrafficStats>('/oci/traffic/monthly', { configId })
 }
 
 /** VCN 安全规则相关接口（独立分组）。 */

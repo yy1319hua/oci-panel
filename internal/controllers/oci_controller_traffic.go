@@ -123,3 +123,29 @@ func (oc *OciController) GetInstanceVnics(c *gin.Context) {
 
 	c.JSON(http.StatusOK, models.SuccessResponse(vnics, "Success"))
 }
+
+// GetMonthlyTraffic 获取账号级月度流量（总流量 + 每实例明细 + 实际/计费区分）。
+// 甲骨文按账号计费，故汇总 compartment 下全部实例；同时返回每实例拆分与计费出站字节。
+func (oc *OciController) GetMonthlyTraffic(c *gin.Context) {
+	var req struct {
+		ConfigID string `json:"configId" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse(400, err.Error()))
+		return
+	}
+
+	user, ok := oc.loadUser(c, req.ConfigID)
+	if !ok {
+		return
+	}
+
+	ctx := context.Background()
+	stats, err := oc.ociService.GetMonthlyTrafficStats(ctx, &user)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse(500, err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusOK, models.SuccessResponse(stats, "Success"))
+}
