@@ -40,4 +40,4 @@ resend_api_key = ""
 # 可带显示名，例如："OCI Panel <noreply@yourdomain.com>"
 from = ""
 # 面板对外访问地址，用于拼接密码重置链接
-public_url = "https://oci.example.com"
+public_url = "https://panel.example.com"

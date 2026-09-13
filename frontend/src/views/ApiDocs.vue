@@ -26,7 +26,7 @@ interface ApiGroup {
   endpoints: ApiEndpoint[]
 }
 
-const origin = computed(() => (typeof window !== 'undefined' ? window.location.origin : 'https://oci.example.com'))
+const origin = computed(() => (typeof window !== 'undefined' ? window.location.origin : 'https://panel.example.com'))
 const authStore = useAuthStore()
 
 const groups: ApiGroup[] = [
