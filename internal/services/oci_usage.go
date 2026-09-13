@@ -2,7 +2,9 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/adiecho/oci-panel/internal/models"
@@ -71,7 +73,14 @@ func (s *OCIService) GetDailyCost(ctx context.Context, user *models.OciUser, day
 		req.Page = page
 		resp, err := client.RequestSummarizedUsages(ctx, req)
 		if err != nil {
-			return nil, fmt.Errorf("用量查询失败(需 USAGE_REPORT_READ 权限): %w", err)
+			// 区分「超时/网络不通」与「权限不足」：前者是客户端到 OCI Usage API 的
+			// 链路问题（已把 Usage 客户端超时放宽到 120s），后者才是 IAM 授权缺失。
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) ||
+				strings.Contains(strings.ToLower(err.Error()), "deadline") ||
+				strings.Contains(strings.ToLower(err.Error()), "timeout") {
+				return nil, fmt.Errorf("用量查询超时（OCI Usage API 响应慢或网络不通，客户端超时已放宽至 120s 仍失败）: %w", err)
+			}
+			return nil, fmt.Errorf("用量查询失败（若返回 401/403，需给该账号授予 USAGE_REPORT_READ 权限）: %w", err)
 		}
 		for _, item := range resp.Items {
 			if item.TimeUsageStarted == nil {

@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
@@ -287,6 +288,12 @@ func (s *OCIService) GetUsageapiClient(user *models.OciUser) (usageapi.UsageapiC
 	if err != nil {
 		return usageapi.UsageapiClient{}, err
 	}
+
+	// 成本查询走 Usage API，甲骨文按天聚合的数据在首次/冷启动调用时偶发慢于
+	// SDK 默认的 60s 客户端超时（实测正常约 1~2s，但冷启动会突破 60s 被掐断，
+	// 表现为「context deadline exceeded」）。这里给 Usage 客户端单独放宽到 120s，
+	// 不影响 Compute/Identity 等其它客户端的默认超时。
+	client.HTTPClient = &http.Client{Timeout: 120 * time.Second}
 	cc.usage = &client
 	return client, nil
 }
