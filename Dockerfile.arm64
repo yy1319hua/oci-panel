@@ -5,8 +5,8 @@
 # Stage 1: 前端构建（amd64 原生，npm 打包与架构无关）
 FROM --platform=linux/amd64 node:22-alpine AS frontend-builder
 WORKDIR /app/frontend
-COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci --ignore-scripts --registry=https://registry.npmmirror.com
+COPY frontend/package.json ./
+RUN npm install --ignore-scripts --registry=https://registry.npmmirror.com
 COPY frontend/ ./
 RUN npm run build
 

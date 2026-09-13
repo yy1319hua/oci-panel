@@ -13,15 +13,6 @@ export type { PublicKeyOptions, SerializedCredential } from './passkey'
 export { telegramApi } from './telegram'
 export type { TelegramConfig } from './telegram'
 
-export { presetApi } from './preset'
-export type { Preset, PresetForm } from './preset'
-
-export { keyApi } from './key'
-export type { KeyItem, KeyListReq } from './key'
-
-export { taskApi } from './task'
-export type { TaskItem, TaskLog, CreateTaskReq } from './task'
-
 export { bootVolumeApi } from './bootVolume'
 
 export { tokenApi } from './token'

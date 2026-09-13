@@ -21,6 +21,7 @@ import (
 	"github.com/adiecho/oci-panel/internal/middleware"
 	"github.com/adiecho/oci-panel/internal/models"
 	"github.com/adiecho/oci-panel/internal/services"
+	"github.com/adiecho/oci-panel/internal/version"
 	"github.com/gin-gonic/gin"
 	"github.com/pquerna/otp/totp"
 )
@@ -267,6 +268,16 @@ func (sc *SysController) GetGlance(c *gin.Context) {
 		TotalConfigs: totalConfigs,
 		TotalTasks:   totalTasks,
 	}, "success"))
+}
+
+// VersionResponse 是 /api/sys/getVersion 的返回体，版本号来自统一常量。
+type VersionResponse struct {
+	Version string `json:"version"`
+}
+
+// GetVersion 返回面板统一版本号（单一数据源，供前端系统概览 / 系统设置展示）。
+func (sc *SysController) GetVersion(c *gin.Context) {
+	c.JSON(http.StatusOK, models.SuccessResponse(VersionResponse{Version: version.AppVersion}, "success"))
 }
 
 type SysCfgResponse struct {

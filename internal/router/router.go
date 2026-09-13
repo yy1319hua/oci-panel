@@ -3,7 +3,6 @@ package router
 import (
 	"github.com/adiecho/oci-panel/internal/config"
 	"github.com/adiecho/oci-panel/internal/controllers"
-	"github.com/adiecho/oci-panel/internal/database"
 	"github.com/adiecho/oci-panel/internal/logger"
 	"github.com/adiecho/oci-panel/internal/middleware"
 	"github.com/adiecho/oci-panel/internal/services"
@@ -12,7 +11,6 @@ import (
 
 type Services struct {
 	Scheduler *services.SchedulerService
-	Task      *services.TaskService
 	Telegram  *services.TelegramService
 }
 
@@ -44,7 +42,6 @@ func Setup(r *gin.Engine, cfg *config.Config) *Services {
 	ipService := services.NewIpService(ociService)
 	wsService := services.NewWebSocketService()
 	schedulerService := services.NewSchedulerService(ociService)
-	taskService := services.NewTaskService(database.GetDB(), ociService)
 	telegramService := services.NewTelegramService(ociService)
 
 	// 把「后端日志」与「API 访问日志」统一汇入实时日志页：
@@ -72,6 +69,7 @@ func Setup(r *gin.Engine, cfg *config.Config) *Services {
 		sys.POST("/resetPassword", sysCtrl.ResetPassword)
 		sys.POST("/wsTicket", wsCtrl.IssueTicket)
 		sys.GET("/getGlance", sysCtrl.GetGlance)
+		sys.GET("/getVersion", sysCtrl.GetVersion)
 		sys.GET("/getSysCfg", sysCtrl.GetSysCfg)
 		sys.POST("/updateCacheCfg", sysCtrl.UpdateCacheCfg)
 		sys.POST("/refreshCache", sysCtrl.RefreshCache)
@@ -97,7 +95,6 @@ func Setup(r *gin.Engine, cfg *config.Config) *Services {
 			passkey.POST("/disable", passkeyCtrl.Disable)
 		}
 
-		taskCtrl := controllers.NewTaskController(taskService)
 		ociCtrl := controllers.NewOciController(ociService, schedulerService)
 		oci := api.Group("/oci")
 		{
@@ -105,8 +102,6 @@ func Setup(r *gin.Engine, cfg *config.Config) *Services {
 			oci.POST("/addCfg", ociCtrl.AddCfg)
 			oci.POST("/updateCfgName", ociCtrl.UpdateCfgName)
 			oci.POST("/removeCfg", ociCtrl.RemoveCfg)
-			oci.POST("/createInstance", taskCtrl.CreateTask)
-			oci.POST("/createTaskPage", ociCtrl.CreateTaskPage)
 			oci.POST("/uploadKey", ociCtrl.UploadKey)
 			oci.POST("/details", ociCtrl.GetConfigDetails)
 			oci.POST("/details/instances", ociCtrl.GetConfigInstances)
@@ -162,39 +157,6 @@ func Setup(r *gin.Engine, cfg *config.Config) *Services {
 			ip.POST("/attachIpv6", ipCtrl.AttachIpv6)
 		}
 
-		keyCtrl := controllers.NewKeyController()
-		key := api.Group("/key")
-		{
-			key.GET("/list", keyCtrl.ListKeys)
-			key.POST("/create", keyCtrl.CreateKey)
-			key.POST("/update", keyCtrl.UpdateKey)
-			key.POST("/delete", keyCtrl.DeleteKey)
-			key.GET("/standalone", keyCtrl.GetAllStandaloneKeys)
-			key.GET("/detail", keyCtrl.GetKeyByID)
-		}
-
-		task := api.Group("/task")
-		{
-			task.POST("/create", taskCtrl.CreateTask)
-			task.POST("/list", taskCtrl.TaskList)
-			task.POST("/start", taskCtrl.StartTask)
-			task.POST("/stop", taskCtrl.StopTask)
-			task.POST("/delete", taskCtrl.DeleteTask)
-			task.POST("/batchDelete", taskCtrl.BatchDeleteTask)
-			task.POST("/logs", taskCtrl.TaskLogs)
-			task.POST("/clearLogs", taskCtrl.ClearTaskLogs)
-		}
-
-		presetCtrl := controllers.NewPresetController()
-		preset := api.Group("/preset")
-		{
-			preset.POST("/create", presetCtrl.CreatePreset)
-			preset.POST("/update", presetCtrl.UpdatePreset)
-			preset.POST("/delete", presetCtrl.DeletePreset)
-			preset.GET("/list", presetCtrl.ListPresets)
-			preset.GET("/detail", presetCtrl.GetPreset)
-		}
-
 		telegramCtrl := controllers.NewTelegramController(telegramService)
 		telegram := api.Group("/telegram")
 		{
@@ -231,7 +193,6 @@ func Setup(r *gin.Engine, cfg *config.Config) *Services {
 
 	return &Services{
 		Scheduler: schedulerService,
-		Task:      taskService,
 		Telegram:  telegramService,
 	}
 }

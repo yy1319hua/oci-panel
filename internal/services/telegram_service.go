@@ -13,6 +13,7 @@ import (
 
 	"github.com/adiecho/oci-panel/internal/database"
 	"github.com/adiecho/oci-panel/internal/models"
+	"github.com/adiecho/oci-panel/internal/version"
 )
 
 const (
@@ -640,8 +641,8 @@ func (s *TelegramService) getConfigList() string {
 }
 
 func (s *TelegramService) getVersionInfo() string {
-	return fmt.Sprintf("【版本信息】\n\n📦 应用名称：OCI Panel\n🏷️ 当前版本：v1.0.5\n🔧 后端框架：Gin (Go)\n🎨 前端框架：Vue 3 + Vite\n💾 数据库：SQLite\n\n🕐 查询时间：%s",
-		time.Now().Format("2006-01-02 15:04:05"))
+	return fmt.Sprintf("【版本信息】\n\n📦 应用名称：OCI Panel\n🏷️ 当前版本：%s\n🔧 后端框架：Gin (Go)\n🎨 前端框架：Vue 3 + Vite\n💾 数据库：SQLite\n\n🕐 查询时间：%s",
+		version.AppVersion, time.Now().Format("2006-01-02 15:04:05"))
 }
 
 func (s *TelegramService) getTrafficStats() string {

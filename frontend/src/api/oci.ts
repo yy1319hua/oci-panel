@@ -39,6 +39,7 @@ export interface InstanceInfo {
   publicIps?: string[]
   ipv6?: string
   imageName?: string
+  createTime?: string
 }
 
 /** 引导卷信息（字段较多且前端松散使用，保持宽松）。 */

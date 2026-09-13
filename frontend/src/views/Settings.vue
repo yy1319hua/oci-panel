@@ -532,15 +532,17 @@ onMounted(() => {
   loadAuthStatus()
   loadProfile()
   loadTokens()
+  sysApi.getVersion().then(r => { if (r.data?.version) version.value = r.data.version }).catch(() => {})
 })
 
-const systemInfo = [
+const version = ref('')
+const systemInfo = computed(() => [
   { label: '应用名称', value: 'OCI Panel', icon: Server },
-  { label: '版本号', value: 'v1.0.0', icon: Info },
+  { label: '版本号', value: version.value ? `v${version.value}` : '—', icon: Info },
   { label: '后端框架', value: 'Gin (Go)', icon: Code },
   { label: '前端框架', value: 'Vue 3 + Vite + Tailwind CSS', icon: Code },
   { label: '数据库', value: 'SQLite', icon: Database }
-]
+])
 </script>
 
 <template>

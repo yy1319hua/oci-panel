@@ -46,6 +46,11 @@ export interface Glance {
   totalTasks: number
 }
 
+/** 版本信息（统一数据源，后端返回固定常量）。 */
+export interface VersionResponse {
+  version: string
+}
+
 /** 当前管理员资料。 */
 export interface Profile {
   account: string
@@ -69,6 +74,7 @@ export const sysApi = {
   updateLogLevel: (level: string) => post('/sys/updateLogLevel', { level }),
   updateAccount: (account: string) => post<{ token: string; account: string }>('/sys/updateAccount', { account }),
   getGlance: () => get<Glance>('/sys/getGlance'),
+  getVersion: () => get<VersionResponse>('/sys/getVersion'),
   requestPasswordReset: (email: string) => post('/sys/requestPasswordReset', { email }),
   resetPassword: (token: string, newPassword: string) => post('/sys/resetPassword', { token, newPassword })
 }

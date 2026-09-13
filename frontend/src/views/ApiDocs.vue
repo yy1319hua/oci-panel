@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { Copy, Check, KeyRound, Server, ListTodo, Globe, Terminal, Lock, Unlock, ArrowLeft, Cloud } from 'lucide-vue-next'
+import { Copy, Check, KeyRound, Server, Globe, Terminal, Lock, Unlock, ArrowLeft, Cloud } from 'lucide-vue-next'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -78,31 +78,6 @@ const groups: ApiGroup[] = [
       { method: 'POST', path: '/api/instance/updateName', desc: '修改实例名称', auth: 'token' },
       { method: 'POST', path: '/api/instance/changeIP', desc: '更换公网 IP', auth: 'token' },
       { method: 'POST', path: '/api/instance/attachIPv6', desc: '附加 IPv6', auth: 'token' }
-    ]
-  },
-  {
-    name: '任务管理',
-    icon: ListTodo,
-    desc: '抢占式实例创建任务（定时轮询直到成功）',
-    endpoints: [
-      { method: 'POST', path: '/api/task/create', desc: '创建实例任务', auth: 'token', body: '{"userId":"1","ocpus":1,"memory":6,"disk":50,"sshKeyId":"1","interval":60}' },
-      { method: 'POST', path: '/api/task/list', desc: '任务列表', auth: 'token', body: '{"page":1,"pageSize":10}' },
-      { method: 'POST', path: '/api/task/start', desc: '启动任务', auth: 'token' },
-      { method: 'POST', path: '/api/task/stop', desc: '停止任务', auth: 'token' },
-      { method: 'POST', path: '/api/task/delete', desc: '删除任务', auth: 'token' },
-      { method: 'POST', path: '/api/task/logs', desc: '任务执行日志', auth: 'token' }
-    ]
-  },
-  {
-    name: '密钥与预设',
-    icon: Lock,
-    desc: 'SSH 公钥管理与实例创建预设',
-    endpoints: [
-      { method: 'GET', path: '/api/key/list', desc: '密钥列表', auth: 'token' },
-      { method: 'POST', path: '/api/key/create', desc: '新增公钥', auth: 'token' },
-      { method: 'POST', path: '/api/key/delete', desc: '删除公钥', auth: 'token' },
-      { method: 'GET', path: '/api/preset/list', desc: '预设列表', auth: 'token' },
-      { method: 'POST', path: '/api/preset/create', desc: '新建预设', auth: 'token' }
     ]
   },
   {

@@ -6,8 +6,6 @@ import {
   Cloud,
   LayoutDashboard,
   Settings2,
-  ListTodo,
-  Key,
   FileText,
   Settings,
   LogOut,
@@ -15,7 +13,6 @@ import {
   X,
   User,
   Clock,
-  Package,
   BookOpen
 } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
@@ -33,9 +30,6 @@ const currentTime = ref('')
 const navItems = [
   { path: '/', label: '概览', icon: LayoutDashboard },
   { path: '/configs', label: '配置管理', icon: Settings2 },
-  { path: '/tasks', label: '任务列表', icon: ListTodo },
-  { path: '/keys', label: '密钥管理', icon: Key },
-  { path: '/presets', label: '预设配置', icon: Package },
   { path: '/logs', label: '实时日志', icon: FileText },
   { path: '/docs', label: 'API 文档', icon: BookOpen },
   { path: '/settings', label: '系统设置', icon: Settings }

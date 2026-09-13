@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useMotion } from '@vueuse/motion'
-import { RouterLink } from 'vue-router'
 import {
   Plus,
   Search,
@@ -16,7 +15,7 @@ import {
   Check,
   MoreHorizontal
 } from 'lucide-vue-next'
-import { ociApi, taskApi, presetApi, keyApi, type KeyItem, type ImageInfo, type Preset } from '@/api'
+import { ociApi } from '@/api'
 import { toast } from '@/composables/useToast'
 import { useSelection } from '@/composables/useSelection'
 import { usePagination } from '@/composables/usePagination'
@@ -27,7 +26,6 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Switch } from '@/components/ui/switch'
 import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Dropdown, DropdownItem } from '@/components/ui/dropdown'
 import type { Config } from '@/views/configs/types'
@@ -49,17 +47,12 @@ const {
 
 // 弹窗状态
 const showAddModal = ref(false)
-const showCreateInstanceModal = ref(false)
-const showBatchCreateModal = ref(false)
 const detailsOpen = ref(false)
 const editingConfig = ref<Config | null>(null)
-const selectedConfigForInstance = ref<Config | null>(null)
 const selectedConfigForDetails = ref<Config | null>(null)
 
 // 加载状态
 const submitting = ref(false)
-const submittingInstance = ref(false)
-const loadingImages = ref(false)
 
 // 文件上传
 const isDragging = ref(false)
@@ -68,24 +61,6 @@ const fileInput = ref<HTMLInputElement>()
 
 // 表单
 const form = ref({ username: '', configContent: '' })
-const instanceForm = ref({
-  ociRegion: '',
-  ocpus: 1,
-  memory: 6,
-  disk: 50,
-  bootVolumeVpu: 10,
-  architecture: 'ARM',
-  operationSystem: 'Ubuntu',
-  imageId: '',
-  sshKeyId: '',
-  interval: 60,
-  isTaskMode: true
-})
-const sshKeys = ref<KeyItem[]>([])
-const availableImages = ref<ImageInfo[]>([])
-const filteredImages = ref<ImageInfo[]>([])
-const presets = ref<Preset[]>([])
-const selectedPresetId = ref('')
 
 // 工具函数
 const parseConfigContent = (content: string) => {
@@ -116,75 +91,11 @@ const loadConfigs = async (page = 1) => {
   }
 }
 
-const loadSSHKeys = async () => {
-  try {
-    const response = await keyApi.standalone()
-    sshKeys.value = response.data || []
-  } catch {
-    sshKeys.value = []
-  }
-}
-
-const loadPresets = async () => {
-  try {
-    const response = await presetApi.list()
-    presets.value = response.data || []
-  } catch {
-    presets.value = []
-  }
-}
-
-const applyPreset = (presetId: string) => {
-  if (!presetId) return
-  const preset = presets.value.find(p => p.id === presetId)
-  if (preset) {
-    instanceForm.value.ocpus = preset.ocpus
-    instanceForm.value.memory = preset.memory
-    instanceForm.value.disk = preset.disk
-    instanceForm.value.bootVolumeVpu = preset.bootVolumeVpu
-    instanceForm.value.architecture = preset.architecture
-    instanceForm.value.operationSystem = preset.operationSystem
-    if (preset.imageId) {
-      instanceForm.value.imageId = preset.imageId
-    }
-    if (preset.sshKeyId) {
-      instanceForm.value.sshKeyId = preset.sshKeyId
-    }
-    if (selectedConfigForInstance.value) {
-      loadImages(selectedConfigForInstance.value.id, instanceForm.value.ociRegion, preset.architecture)
-    }
-    toast.success(`已应用预设: ${preset.name}`)
-  }
-}
-
-const loadImages = async (configId: string, region: string, architecture: string) => {
-  if (!configId || !region || !architecture) return
-  loadingImages.value = true
-  try {
-    const response = await ociApi.images({ configId, region, architecture })
-    availableImages.value = response.data || []
-    filterImagesByOS()
-  } catch {
-    availableImages.value = []
-    filteredImages.value = []
-  } finally {
-    loadingImages.value = false
-  }
-}
-
-const filterImagesByOS = () => {
-  const os = instanceForm.value.operationSystem.toLowerCase()
-  filteredImages.value = availableImages.value.filter(img =>
-    img.operatingSystem.toLowerCase().includes(os === 'oracle linux' ? 'oracle' : os)
-  )
-  instanceForm.value.imageId = filteredImages.value.length > 0 ? filteredImages.value[0].id : ''
-}
-
-// 配置操作
 const handleSearch = debounce(() => {
   clearSelection()
   loadConfigs(1)
 }, 300)
+
 const closeModal = () => {
   showAddModal.value = false
   editingConfig.value = null
@@ -276,120 +187,6 @@ const batchDeleteConfigs = async () => {
   }
 }
 
-// 创建实例
-const createInstance = async (config: Config) => {
-  selectedConfigForInstance.value = config
-  instanceForm.value.ociRegion = config.ociRegion
-  selectedPresetId.value = ''
-  await Promise.all([loadSSHKeys(), loadPresets()])
-  await loadImages(config.id, config.ociRegion, instanceForm.value.architecture)
-  showCreateInstanceModal.value = true
-}
-const closeInstanceModal = () => {
-  showCreateInstanceModal.value = false
-  selectedConfigForInstance.value = null
-  availableImages.value = []
-  filteredImages.value = []
-}
-const onArchitectureChange = () => {
-  if (selectedConfigForInstance.value)
-    loadImages(selectedConfigForInstance.value.id, instanceForm.value.ociRegion, instanceForm.value.architecture)
-}
-const onOperationSystemChange = () => {
-  filterImagesByOS()
-}
-
-const submitInstanceTask = async () => {
-  const config = selectedConfigForInstance.value
-  if (!config) {
-    toast.warning('请先选择配置')
-    return
-  }
-  if (!instanceForm.value.sshKeyId) {
-    toast.warning('请选择SSH公钥')
-    return
-  }
-  submittingInstance.value = true
-  try {
-    await taskApi.create({
-      userId: config.id,
-      ociRegion: instanceForm.value.ociRegion,
-      ocpus: instanceForm.value.ocpus,
-      memory: instanceForm.value.memory,
-      disk: instanceForm.value.disk,
-      bootVolumeVpu: instanceForm.value.bootVolumeVpu,
-      architecture: instanceForm.value.architecture,
-      operationSystem: instanceForm.value.operationSystem,
-      imageId: instanceForm.value.imageId || undefined,
-      sshKeyId: instanceForm.value.sshKeyId,
-      interval: instanceForm.value.interval || 60,
-      executeOnce: !instanceForm.value.isTaskMode
-    })
-    toast.success(instanceForm.value.isTaskMode ? '任务已创建，可在任务列表查看' : '实例创建请求已提交')
-    closeInstanceModal()
-  } catch (error: any) {
-    toast.error(error.message || '创建失败')
-  } finally {
-    submittingInstance.value = false
-  }
-}
-
-// 批量创建实例
-const batchCreateInstance = async () => {
-  if (selectedConfigIds.value.length === 0) {
-    toast.warning('请先选择配置')
-    return
-  }
-  selectedPresetId.value = ''
-  await Promise.all([loadSSHKeys(), loadPresets()])
-  showBatchCreateModal.value = true
-}
-const closeBatchCreateModal = () => {
-  showBatchCreateModal.value = false
-}
-
-const submitBatchInstanceTask = async () => {
-  if (!instanceForm.value.sshKeyId) {
-    toast.warning('请选择SSH公钥')
-    return
-  }
-  submittingInstance.value = true
-  try {
-    const ids = [...selectedConfigIds.value]
-    // 并发创建（替代逐个 await 的串行），并逐项汇总成功/失败结果
-    const results = await Promise.allSettled(
-      ids.map(configId => {
-        const config = configs.value.find(c => c.id === configId)
-        return taskApi.create({
-          userId: configId,
-          ociRegion: config?.ociRegion || instanceForm.value.ociRegion,
-          ocpus: instanceForm.value.ocpus,
-          memory: instanceForm.value.memory,
-          disk: instanceForm.value.disk,
-          architecture: instanceForm.value.architecture,
-          operationSystem: instanceForm.value.operationSystem,
-          sshKeyId: instanceForm.value.sshKeyId,
-          interval: instanceForm.value.interval || 60
-        })
-      })
-    )
-    const succeeded = results.filter(r => r.status === 'fulfilled').length
-    const failedIds = ids.filter((_, i) => results[i].status === 'rejected')
-    if (failedIds.length === 0) {
-      toast.success(`已为 ${succeeded} 个配置创建定时任务`)
-    } else {
-      const failedNames = failedIds.map(id => configs.value.find(c => c.id === id)?.username || `#${id}`)
-      toast.warning(`成功 ${succeeded} 个，失败 ${failedIds.length} 个：${failedNames.join('、')}`)
-    }
-    closeBatchCreateModal()
-    clearSelection()
-  } catch (error: any) {
-    toast.error(error.message || '批量创建失败')
-  } finally {
-    submittingInstance.value = false
-  }
-}
-
 // 配置详情（打开抽屉，详情逻辑由 ConfigDetailsDrawer 承载）
 const viewConfigDetails = (config: Config) => {
   selectedConfigForDetails.value = config
@@ -413,10 +210,6 @@ useMotion(headerRef, { initial: { opacity: 0, y: -20 }, enter: { opacity: 1, y: 
         <Badge v-if="selectedConfigIds.length > 0" variant="secondary">已选择 {{ selectedConfigIds.length }} 项</Badge>
       </div>
       <div class="flex gap-2">
-        <Button v-if="selectedConfigIds.length > 0" variant="success" @click="batchCreateInstance">
-          <Plus class="w-4 h-4" />
-          批量创建实例
-        </Button>
         <Button v-if="selectedConfigIds.length > 0" variant="destructive" @click="batchDeleteConfigs">
           <Trash2 class="w-4 h-4" />
           批量删除
@@ -492,10 +285,6 @@ useMotion(headerRef, { initial: { opacity: 0, y: -20 }, enter: { opacity: 1, y: 
                 </span>
               </div>
               <div class="flex justify-end items-center gap-1">
-                <Button size="sm" variant="success" @click="createInstance(config)">
-                  <Plus class="w-3.5 h-3.5" />
-                  <span class="ml-1">创建实例</span>
-                </Button>
                 <Button size="sm" variant="outline" @click="viewConfigDetails(config)">
                   <Eye class="w-3.5 h-3.5" />
                   <span class="ml-1">详情</span>
@@ -543,9 +332,6 @@ useMotion(headerRef, { initial: { opacity: 0, y: -20 }, enter: { opacity: 1, y: 
                 </span>
               </div>
               <div class="flex flex-wrap gap-2">
-                <Button size="sm" variant="success" @click="createInstance(config)">
-                  <Plus class="w-3.5 h-3.5" />创建实例
-                </Button>
                 <Button size="sm" variant="outline" @click="viewConfigDetails(config)">
                   <Eye class="w-3.5 h-3.5" />详情
                 </Button>
@@ -664,227 +450,6 @@ useMotion(headerRef, { initial: { opacity: 0, y: -20 }, enter: { opacity: 1, y: 
           <Button type="submit" :disabled="submitting">
             <Loader2 v-if="submitting" class="w-4 h-4 animate-spin" />
             {{ submitting ? '提交中...' : '提交' }}
-          </Button>
-        </DialogFooter>
-      </form>
-    </Dialog>
-
-    <!-- Create Instance Modal -->
-    <Dialog v-model:open="showCreateInstanceModal">
-      <DialogHeader class="mb-4">
-        <DialogTitle>创建实例任务</DialogTitle>
-        <DialogDescription>
-          为配置
-          <span class="text-primary font-medium">{{ selectedConfigForInstance?.username }}</span>
-          创建实例
-        </DialogDescription>
-      </DialogHeader>
-      <form class="space-y-4" @submit.prevent="submitInstanceTask">
-        <div v-if="presets.length > 0">
-          <label class="block text-sm font-medium mb-2">选择预设</label>
-          <select
-            v-model="selectedPresetId"
-            class="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
-            @change="applyPreset(selectedPresetId)"
-          >
-            <option value="">手动填写配置</option>
-            <option v-for="preset in presets" :key="preset.id" :value="preset.id">
-              {{ preset.name }} ({{ preset.ocpus }}核 {{ preset.memory }}GB {{ preset.architecture }})
-            </option>
-          </select>
-          <p class="text-xs text-muted-foreground mt-1">
-            选择预设后自动填充配置，或在
-            <RouterLink to="/presets" class="text-primary hover:underline">预设配置</RouterLink>
-            中管理
-          </p>
-        </div>
-        <div>
-          <label class="block text-sm font-medium mb-2">区域</label>
-          <Input v-model="instanceForm.ociRegion" placeholder="例: ap-singapore-1" required />
-        </div>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label class="block text-sm font-medium mb-2">CPU核心数</label>
-            <Input v-model.number="instanceForm.ocpus" type="number" step="0.1" min="0.1" required />
-          </div>
-          <div>
-            <label class="block text-sm font-medium mb-2">内存(GB)</label>
-            <Input v-model.number="instanceForm.memory" type="number" step="0.1" min="0.1" required />
-          </div>
-        </div>
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div>
-            <label class="block text-sm font-medium mb-2">磁盘(GB)</label>
-            <Input v-model.number="instanceForm.disk" type="number" min="50" required />
-          </div>
-          <div>
-            <label class="block text-sm font-medium mb-2">VPU/GB</label>
-            <select
-              v-model.number="instanceForm.bootVolumeVpu"
-              class="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
-            >
-              <option v-for="vpu in [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120]" :key="vpu" :value="vpu">
-                {{ vpu }}
-              </option>
-            </select>
-          </div>
-          <div>
-            <label class="block text-sm font-medium mb-2">架构</label>
-            <select
-              v-model="instanceForm.architecture"
-              class="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
-              @change="onArchitectureChange"
-            >
-              <option value="ARM">ARM</option>
-              <option value="AMD">AMD</option>
-            </select>
-          </div>
-        </div>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label class="block text-sm font-medium mb-2">操作系统</label>
-            <select
-              v-model="instanceForm.operationSystem"
-              class="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
-              @change="onOperationSystemChange"
-            >
-              <option value="Ubuntu">Ubuntu</option>
-              <option value="CentOS">CentOS</option>
-              <option value="Oracle Linux">Oracle Linux</option>
-            </select>
-          </div>
-          <div>
-            <label class="block text-sm font-medium mb-2">系统版本</label>
-            <select
-              v-model="instanceForm.imageId"
-              class="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
-              :disabled="loadingImages"
-            >
-              <option value="">
-                {{ loadingImages ? '加载中...' : filteredImages.length === 0 ? '无可用镜像' : '自动选择最新' }}
-              </option>
-              <option v-for="img in filteredImages" :key="img.id" :value="img.id">
-                {{ img.operatingSystem }} {{ img.operatingSystemVersion }}
-              </option>
-            </select>
-          </div>
-        </div>
-        <div>
-          <label class="block text-sm font-medium mb-2">SSH公钥</label>
-          <select
-            v-model="instanceForm.sshKeyId"
-            class="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
-            required
-          >
-            <option value="">请选择SSH公钥</option>
-            <option v-for="key in sshKeys" :key="key.id" :value="key.id">{{ key.name }}</option>
-          </select>
-          <p class="text-xs text-muted-foreground mt-2">
-            请先在
-            <RouterLink to="/keys" class="text-primary hover:underline">密钥管理</RouterLink>
-            中添加SSH公钥
-          </p>
-        </div>
-        <div class="flex items-center gap-3 py-2">
-          <Switch v-model="instanceForm.isTaskMode" />
-          <span class="text-sm font-medium">抢占实例任务</span>
-          <span class="text-xs text-muted-foreground">（持续尝试直到成功）</span>
-        </div>
-        <div v-if="instanceForm.isTaskMode">
-          <label class="block text-sm font-medium mb-2">执行间隔（秒）</label>
-          <Input v-model.number="instanceForm.interval" type="number" min="10" placeholder="60" />
-        </div>
-        <DialogFooter class="mt-6">
-          <Button type="button" variant="outline" @click="closeInstanceModal">取消</Button>
-          <Button type="submit" :disabled="submittingInstance">
-            <Loader2 v-if="submittingInstance" class="w-4 h-4 animate-spin" />
-            {{ submittingInstance ? '创建中...' : instanceForm.isTaskMode ? '创建任务' : '创建实例' }}
-          </Button>
-        </DialogFooter>
-      </form>
-    </Dialog>
-
-    <!-- Batch Create Instance Modal -->
-    <Dialog v-model:open="showBatchCreateModal">
-      <DialogHeader class="mb-4">
-        <DialogTitle>批量创建实例任务</DialogTitle>
-        <DialogDescription>
-          将为
-          <span class="text-primary font-medium">{{ selectedConfigIds.length }}</span>
-          个配置批量创建实例
-        </DialogDescription>
-      </DialogHeader>
-      <form class="space-y-4" @submit.prevent="submitBatchInstanceTask">
-        <div v-if="presets.length > 0">
-          <label class="block text-sm font-medium mb-2">选择预设</label>
-          <select
-            v-model="selectedPresetId"
-            class="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
-            @change="applyPreset(selectedPresetId)"
-          >
-            <option value="">手动填写配置</option>
-            <option v-for="preset in presets" :key="preset.id" :value="preset.id">
-              {{ preset.name }} ({{ preset.ocpus }}核 {{ preset.memory }}GB {{ preset.architecture }})
-            </option>
-          </select>
-        </div>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label class="block text-sm font-medium mb-2">CPU核心数</label>
-            <Input v-model.number="instanceForm.ocpus" type="number" step="0.1" min="0.1" required />
-          </div>
-          <div>
-            <label class="block text-sm font-medium mb-2">内存(GB)</label>
-            <Input v-model.number="instanceForm.memory" type="number" step="0.1" min="0.1" required />
-          </div>
-        </div>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label class="block text-sm font-medium mb-2">磁盘(GB)</label>
-            <Input v-model.number="instanceForm.disk" type="number" min="50" required />
-          </div>
-          <div>
-            <label class="block text-sm font-medium mb-2">架构</label>
-            <select
-              v-model="instanceForm.architecture"
-              class="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
-            >
-              <option value="ARM">ARM</option>
-              <option value="AMD">AMD</option>
-            </select>
-          </div>
-        </div>
-        <div>
-          <label class="block text-sm font-medium mb-2">操作系统</label>
-          <select
-            v-model="instanceForm.operationSystem"
-            class="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
-          >
-            <option value="Ubuntu">Ubuntu</option>
-            <option value="CentOS">CentOS</option>
-            <option value="Oracle Linux">Oracle Linux</option>
-          </select>
-        </div>
-        <div>
-          <label class="block text-sm font-medium mb-2">SSH公钥</label>
-          <select
-            v-model="instanceForm.sshKeyId"
-            class="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
-            required
-          >
-            <option value="">请选择SSH公钥</option>
-            <option v-for="key in sshKeys" :key="key.id" :value="key.id">{{ key.name }}</option>
-          </select>
-        </div>
-        <div>
-          <label class="block text-sm font-medium mb-2">执行间隔（秒）</label>
-          <Input v-model.number="instanceForm.interval" type="number" min="10" placeholder="60" />
-        </div>
-        <DialogFooter class="mt-6">
-          <Button type="button" variant="outline" @click="closeBatchCreateModal">取消</Button>
-          <Button type="submit" :disabled="submittingInstance">
-            <Loader2 v-if="submittingInstance" class="w-4 h-4 animate-spin" />
-            {{ submittingInstance ? '创建中...' : '批量创建' }}
           </Button>
         </DialogFooter>
       </form>
