@@ -154,8 +154,9 @@ type InstanceTrafficStat struct {
 	Billable    int64  `json:"billable"` // 计费出站（免费额度外）
 }
 
-// FreeTierAllowanceBytes Oracle Always Free 出站免费额度（因区域而异，常见 200GB 或 10TB），按需调整。
-const FreeTierAllowanceBytes int64 = 200 * 1024 * 1024 * 1024
+// FreeTierAllowanceBytes Oracle 出站流量免费额度：10TB。
+// 注意：甲骨文仅对「出站」流量计费，入站流量免费；超此额度才按量计费。
+const FreeTierAllowanceBytes int64 = 10 * 1024 * 1024 * 1024 * 1024
 
 // MonthlyTrafficStats 月度流量统计结果（账号级汇总 + 每实例明细 + 实际/计费区分）。
 type MonthlyTrafficStats struct {

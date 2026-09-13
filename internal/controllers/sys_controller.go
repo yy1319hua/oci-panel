@@ -252,7 +252,6 @@ func (sc *SysController) Login(c *gin.Context) {
 
 type GlanceResponse struct {
 	TotalConfigs int64 `json:"totalConfigs"`
-	TotalTasks   int64 `json:"totalTasks"`
 }
 
 func (sc *SysController) GetGlance(c *gin.Context) {
@@ -261,12 +260,8 @@ func (sc *SysController) GetGlance(c *gin.Context) {
 	var totalConfigs int64
 	db.Model(&models.OciUser{}).Count(&totalConfigs)
 
-	var totalTasks int64
-	db.Model(&models.OciCreateTask{}).Count(&totalTasks)
-
 	c.JSON(http.StatusOK, models.SuccessResponse(GlanceResponse{
 		TotalConfigs: totalConfigs,
-		TotalTasks:   totalTasks,
 	}, "success"))
 }
 

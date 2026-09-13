@@ -105,10 +105,42 @@ export interface MonthlyTrafficStats {
   dailyOutbound: number[]
 }
 
-/** VCN 安全列表（入/出站规则，字段由后端定义，保持宽松）。 */
+/** 单日成本（金额为账号维度合计）。 */
+export interface DailyCost {
+  date: string
+  amount: number
+  currency: string
+}
+
+/** 成本统计（逐日序列 + 本月累计）。 */
+export interface CostStats {
+  days: DailyCost[]
+  monthToDate: number
+  currency: string
+  daysCount: number
+}
+
+/** 安全规则（与后端 models.SecurityRule 对应；协议+来源/目标+端口范围构成定位键）。 */
+export interface SecurityRule {
+  isStateless?: boolean
+  protocol: string
+  protocolName?: string
+  source?: string
+  destination?: string
+  portRangeMin?: number
+  portRangeMax?: number
+  icmpType?: number | null
+  icmpCode?: number | null
+  description?: string
+}
+
+/** VCN 安全列表（入/出站规则）。 */
 export interface SecurityListData {
-  ingressRules?: unknown[]
-  egressRules?: unknown[]
+  id?: string
+  displayName?: string
+  vcnId?: string
+  ingressRules?: SecurityRule[]
+  egressRules?: SecurityRule[]
   [key: string]: unknown
 }
 
@@ -123,6 +155,23 @@ export interface AddSecurityRuleReq {
   portMin?: number
   portMax?: number
   description?: string
+}
+
+/** 修改安全规则入参：oldRule 用于定位，newRule 为改后的值。 */
+export interface UpdateSecurityRuleReq {
+  configId: string
+  vcnId: string
+  isIngress: boolean
+  oldRule: SecurityRule
+  newRule: SecurityRule
+}
+
+/** 删除安全规则入参：rule 用于定位。 */
+export interface DeleteSecurityRuleReq {
+  configId: string
+  vcnId: string
+  isIngress: boolean
+  rule: SecurityRule
 }
 
 /** 配置（账号）与其资源（实例/卷/VCN/租户/镜像/流量）相关接口。 */
@@ -165,13 +214,16 @@ export const ociApi = {
     get<ValueLabel[]>('/oci/traffic/vnics', { params: req }),
   trafficData: (req: { configId: string; instanceId: string; vnicId: string; startTime: string; endTime: string }) =>
     post<TrafficData>('/oci/traffic/data', req),
-  monthlyTraffic: (configId: string) => post<MonthlyTrafficStats>('/oci/traffic/monthly', { configId })
+  monthlyTraffic: (configId: string) => post<MonthlyTrafficStats>('/oci/traffic/monthly', { configId }),
+  dailyCost: (req: { configId: string; days?: number }) => post<CostStats>('/oci/traffic/cost', req)
 }
 
 /** VCN 安全规则相关接口（独立分组）。 */
 export const vcnApi = {
   securityList: (req: { configId: string; vcnId: string }) => post<SecurityListData>('/oci/vcn/securityList', req),
   addSecurityRule: (req: AddSecurityRuleReq) => post('/oci/vcn/addSecurityRule', req),
+  updateSecurityRule: (req: UpdateSecurityRuleReq) => post('/oci/vcn/updateSecurityRule', req),
+  deleteSecurityRule: (req: DeleteSecurityRuleReq) => post('/oci/vcn/deleteSecurityRule', req),
   releaseSecurityRules: (req: { configId: string; vcnId?: string }) => post('/oci/vcn/releaseSecurityRules', req),
   delete: (req: { configId: string; vcnId?: string }) => post('/oci/vcn/delete', req)
 }

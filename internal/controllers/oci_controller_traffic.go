@@ -149,3 +149,30 @@ func (oc *OciController) GetMonthlyTraffic(c *gin.Context) {
 
 	c.JSON(http.StatusOK, models.SuccessResponse(stats, "Success"))
 }
+
+// GetDailyCost 获取账号每日成本（近 N 天，默认 30 天）。
+// 用于第一时间发现超免费额度产生的扣费；依赖 USAGE_REPORT_READ 权限。
+func (oc *OciController) GetDailyCost(c *gin.Context) {
+	var req struct {
+		ConfigID string `json:"configId" binding:"required"`
+		Days     int    `json:"days"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse(400, err.Error()))
+		return
+	}
+
+	user, ok := oc.loadUser(c, req.ConfigID)
+	if !ok {
+		return
+	}
+
+	ctx := context.Background()
+	stats, err := oc.ociService.GetDailyCost(ctx, &user, req.Days)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse(500, err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusOK, models.SuccessResponse(stats, "Success"))
+}

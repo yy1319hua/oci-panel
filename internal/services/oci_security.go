@@ -156,75 +156,9 @@ func (s *OCIService) AddSecurityRule(ctx context.Context, user *models.OciUser, 
 	egressRules := secListResp.EgressSecurityRules
 
 	if isIngress {
-		newRule := core.IngressSecurityRule{
-			Protocol:    &rule.Protocol,
-			Source:      &rule.Source,
-			IsStateless: &rule.IsStateless,
-		}
-		if rule.Description != "" {
-			newRule.Description = &rule.Description
-		}
-		// TCP
-		if rule.Protocol == "6" && (rule.PortRangeMin > 0 || rule.PortRangeMax > 0) {
-			newRule.TcpOptions = &core.TcpOptions{
-				DestinationPortRange: &core.PortRange{
-					Min: &rule.PortRangeMin,
-					Max: &rule.PortRangeMax,
-				},
-			}
-		}
-		// UDP
-		if rule.Protocol == "17" && (rule.PortRangeMin > 0 || rule.PortRangeMax > 0) {
-			newRule.UdpOptions = &core.UdpOptions{
-				DestinationPortRange: &core.PortRange{
-					Min: &rule.PortRangeMin,
-					Max: &rule.PortRangeMax,
-				},
-			}
-		}
-		// ICMP
-		if rule.Protocol == "1" && rule.IcmpType != nil {
-			newRule.IcmpOptions = &core.IcmpOptions{
-				Type: rule.IcmpType,
-				Code: rule.IcmpCode,
-			}
-		}
-		ingressRules = append(ingressRules, newRule)
+		ingressRules = append(ingressRules, buildIngressRule(rule))
 	} else {
-		newRule := core.EgressSecurityRule{
-			Protocol:    &rule.Protocol,
-			Destination: &rule.Destination,
-			IsStateless: &rule.IsStateless,
-		}
-		if rule.Description != "" {
-			newRule.Description = &rule.Description
-		}
-		// TCP
-		if rule.Protocol == "6" && (rule.PortRangeMin > 0 || rule.PortRangeMax > 0) {
-			newRule.TcpOptions = &core.TcpOptions{
-				DestinationPortRange: &core.PortRange{
-					Min: &rule.PortRangeMin,
-					Max: &rule.PortRangeMax,
-				},
-			}
-		}
-		// UDP
-		if rule.Protocol == "17" && (rule.PortRangeMin > 0 || rule.PortRangeMax > 0) {
-			newRule.UdpOptions = &core.UdpOptions{
-				DestinationPortRange: &core.PortRange{
-					Min: &rule.PortRangeMin,
-					Max: &rule.PortRangeMax,
-				},
-			}
-		}
-		// ICMP
-		if rule.Protocol == "1" && rule.IcmpType != nil {
-			newRule.IcmpOptions = &core.IcmpOptions{
-				Type: rule.IcmpType,
-				Code: rule.IcmpCode,
-			}
-		}
-		egressRules = append(egressRules, newRule)
+		egressRules = append(egressRules, buildEgressRule(rule))
 	}
 
 	// 更新安全列表
@@ -233,6 +167,228 @@ func (s *OCIService) AddSecurityRule(ctx context.Context, user *models.OciUser, 
 		UpdateSecurityListDetails: core.UpdateSecurityListDetails{
 			IngressSecurityRules: ingressRules,
 			EgressSecurityRules:  egressRules,
+		},
+	})
+	return err
+}
+
+// buildIngressRule 由模型构造一条 OCI 入站规则（供新增/修改复用）。
+func buildIngressRule(rule *models.SecurityRule) core.IngressSecurityRule {
+	r := core.IngressSecurityRule{
+		Protocol:    &rule.Protocol,
+		Source:      &rule.Source,
+		IsStateless: &rule.IsStateless,
+	}
+	if rule.Description != "" {
+		r.Description = &rule.Description
+	}
+	switch rule.Protocol {
+	case "6":
+		if rule.PortRangeMin > 0 || rule.PortRangeMax > 0 {
+			r.TcpOptions = &core.TcpOptions{DestinationPortRange: &core.PortRange{Min: &rule.PortRangeMin, Max: &rule.PortRangeMax}}
+		}
+	case "17":
+		if rule.PortRangeMin > 0 || rule.PortRangeMax > 0 {
+			r.UdpOptions = &core.UdpOptions{DestinationPortRange: &core.PortRange{Min: &rule.PortRangeMin, Max: &rule.PortRangeMax}}
+		}
+	case "1":
+		if rule.IcmpType != nil {
+			r.IcmpOptions = &core.IcmpOptions{Type: rule.IcmpType, Code: rule.IcmpCode}
+		}
+	}
+	return r
+}
+
+// buildEgressRule 由模型构造一条 OCI 出站规则（供新增/修改复用）。
+func buildEgressRule(rule *models.SecurityRule) core.EgressSecurityRule {
+	r := core.EgressSecurityRule{
+		Protocol:    &rule.Protocol,
+		Destination: &rule.Destination,
+		IsStateless: &rule.IsStateless,
+	}
+	if rule.Description != "" {
+		r.Description = &rule.Description
+	}
+	switch rule.Protocol {
+	case "6":
+		if rule.PortRangeMin > 0 || rule.PortRangeMax > 0 {
+			r.TcpOptions = &core.TcpOptions{DestinationPortRange: &core.PortRange{Min: &rule.PortRangeMin, Max: &rule.PortRangeMax}}
+		}
+	case "17":
+		if rule.PortRangeMin > 0 || rule.PortRangeMax > 0 {
+			r.UdpOptions = &core.UdpOptions{DestinationPortRange: &core.PortRange{Min: &rule.PortRangeMin, Max: &rule.PortRangeMax}}
+		}
+	case "1":
+		if rule.IcmpType != nil {
+			r.IcmpOptions = &core.IcmpOptions{Type: rule.IcmpType, Code: rule.IcmpCode}
+		}
+	}
+	return r
+}
+
+// matchIngressRule 判断现有入站规则是否与「定位键」匹配（协议+来源+端口范围）。
+func matchIngressRule(r core.IngressSecurityRule, key *models.SecurityRule) bool {
+	if r.Protocol == nil || *r.Protocol != key.Protocol {
+		return false
+	}
+	if r.Source == nil || *r.Source != key.Source {
+		return false
+	}
+	pmin, pmax := 0, 0
+	if r.TcpOptions != nil && r.TcpOptions.DestinationPortRange != nil {
+		if r.TcpOptions.DestinationPortRange.Min != nil {
+			pmin = *r.TcpOptions.DestinationPortRange.Min
+		}
+		if r.TcpOptions.DestinationPortRange.Max != nil {
+			pmax = *r.TcpOptions.DestinationPortRange.Max
+		}
+	}
+	if r.UdpOptions != nil && r.UdpOptions.DestinationPortRange != nil {
+		if r.UdpOptions.DestinationPortRange.Min != nil {
+			pmin = *r.UdpOptions.DestinationPortRange.Min
+		}
+		if r.UdpOptions.DestinationPortRange.Max != nil {
+			pmax = *r.UdpOptions.DestinationPortRange.Max
+		}
+	}
+	return pmin == key.PortRangeMin && pmax == key.PortRangeMax
+}
+
+// matchEgressRule 判断现有出站规则是否与「定位键」匹配（协议+目标+端口范围）。
+func matchEgressRule(r core.EgressSecurityRule, key *models.SecurityRule) bool {
+	if r.Protocol == nil || *r.Protocol != key.Protocol {
+		return false
+	}
+	if r.Destination == nil || *r.Destination != key.Destination {
+		return false
+	}
+	pmin, pmax := 0, 0
+	if r.TcpOptions != nil && r.TcpOptions.DestinationPortRange != nil {
+		if r.TcpOptions.DestinationPortRange.Min != nil {
+			pmin = *r.TcpOptions.DestinationPortRange.Min
+		}
+		if r.TcpOptions.DestinationPortRange.Max != nil {
+			pmax = *r.TcpOptions.DestinationPortRange.Max
+		}
+	}
+	if r.UdpOptions != nil && r.UdpOptions.DestinationPortRange != nil {
+		if r.UdpOptions.DestinationPortRange.Min != nil {
+			pmin = *r.UdpOptions.DestinationPortRange.Min
+		}
+		if r.UdpOptions.DestinationPortRange.Max != nil {
+			pmax = *r.UdpOptions.DestinationPortRange.Max
+		}
+	}
+	return pmin == key.PortRangeMin && pmax == key.PortRangeMax
+}
+
+// ModifySecurityRule 修改一条安全规则：用 oldRule 作为定位键找到规则，替换为 newRule。
+// OCI 的 UpdateSecurityList 为全量替换且不返回规则 ID，故采用「读→定位→替换→写」。
+func (s *OCIService) ModifySecurityRule(ctx context.Context, user *models.OciUser, vcnId string, isIngress bool, oldRule, newRule *models.SecurityRule) error {
+	vnClient, err := s.GetVirtualNetworkClient(user)
+	if err != nil {
+		return fmt.Errorf("failed to get virtual network client: %w", err)
+	}
+
+	vcnResp, err := vnClient.GetVcn(ctx, core.GetVcnRequest{VcnId: &vcnId})
+	if err != nil {
+		return fmt.Errorf("failed to get VCN: %w", err)
+	}
+
+	secListResp, err := vnClient.GetSecurityList(ctx, core.GetSecurityListRequest{
+		SecurityListId: vcnResp.DefaultSecurityListId,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get security list: %w", err)
+	}
+
+	ingressRules := secListResp.IngressSecurityRules
+	egressRules := secListResp.EgressSecurityRules
+	found := false
+
+	if isIngress {
+		for i, r := range ingressRules {
+			if matchIngressRule(r, oldRule) {
+				ingressRules[i] = buildIngressRule(newRule)
+				found = true
+				break
+			}
+		}
+	} else {
+		for i, r := range egressRules {
+			if matchEgressRule(r, oldRule) {
+				egressRules[i] = buildEgressRule(newRule)
+				found = true
+				break
+			}
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("未找到要修改的安全规则（请确认协议/来源或目标/端口是否正确）")
+	}
+
+	_, err = vnClient.UpdateSecurityList(ctx, core.UpdateSecurityListRequest{
+		SecurityListId: vcnResp.DefaultSecurityListId,
+		UpdateSecurityListDetails: core.UpdateSecurityListDetails{
+			IngressSecurityRules: ingressRules,
+			EgressSecurityRules:  egressRules,
+		},
+	})
+	return err
+}
+
+// DeleteSecurityRule 删除一条安全规则：用 rule 作为定位键找到并移除。
+func (s *OCIService) DeleteSecurityRule(ctx context.Context, user *models.OciUser, vcnId string, isIngress bool, rule *models.SecurityRule) error {
+	vnClient, err := s.GetVirtualNetworkClient(user)
+	if err != nil {
+		return fmt.Errorf("failed to get virtual network client: %w", err)
+	}
+
+	vcnResp, err := vnClient.GetVcn(ctx, core.GetVcnRequest{VcnId: &vcnId})
+	if err != nil {
+		return fmt.Errorf("failed to get VCN: %w", err)
+	}
+
+	secListResp, err := vnClient.GetSecurityList(ctx, core.GetSecurityListRequest{
+		SecurityListId: vcnResp.DefaultSecurityListId,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get security list: %w", err)
+	}
+
+	found := false
+	if isIngress {
+		kept := make([]core.IngressSecurityRule, 0, len(secListResp.IngressSecurityRules))
+		for _, r := range secListResp.IngressSecurityRules {
+			if !found && matchIngressRule(r, rule) {
+				found = true
+				continue // 跳过（删除）
+			}
+			kept = append(kept, r)
+		}
+		secListResp.IngressSecurityRules = kept
+	} else {
+		kept := make([]core.EgressSecurityRule, 0, len(secListResp.EgressSecurityRules))
+		for _, r := range secListResp.EgressSecurityRules {
+			if !found && matchEgressRule(r, rule) {
+				found = true
+				continue
+			}
+			kept = append(kept, r)
+		}
+		secListResp.EgressSecurityRules = kept
+	}
+
+	if !found {
+		return fmt.Errorf("未找到要删除的安全规则")
+	}
+
+	_, err = vnClient.UpdateSecurityList(ctx, core.UpdateSecurityListRequest{
+		SecurityListId: vcnResp.DefaultSecurityListId,
+		UpdateSecurityListDetails: core.UpdateSecurityListDetails{
+			IngressSecurityRules: secListResp.IngressSecurityRules,
+			EgressSecurityRules:  secListResp.EgressSecurityRules,
 		},
 	})
 	return err

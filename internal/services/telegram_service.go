@@ -285,6 +285,7 @@ func (s *TelegramService) StartBot() {
 	s.stopChan = make(chan struct{})
 	s.mu.Unlock()
 
+	s.setMyCommands()
 	go s.pollUpdates()
 	log.Println("Telegram bot started")
 }
@@ -373,9 +374,7 @@ func (s *TelegramService) handleUpdate(update TelegramUpdate) {
 			return
 		}
 
-		if update.Message.Text == "/start" {
-			s.handleStartCommand(update.Message.Chat.ID)
-		}
+		s.handleCommand(update.Message.Chat.ID, update.Message.Text)
 	}
 
 	if update.CallbackQuery != nil {
@@ -394,12 +393,79 @@ func (s *TelegramService) handleStartCommand(chatID int64) {
 	s.doSendMessage(fmt.Sprintf("%d", chatID), "请选择需要执行的操作：", keyboard)
 }
 
+// handleCommand 处理文本命令。无命令（普通文本）时回落到主菜单，避免用户不知所措。
+func (s *TelegramService) handleCommand(chatID int64, text string) {
+	chat := fmt.Sprintf("%d", chatID)
+	cmd := strings.TrimSpace(strings.ToLower(text))
+	// 去掉 @botname 后缀（群聊中形如 /traffic@mybot）
+	if i := strings.Index(cmd, "@"); i > 0 {
+		cmd = cmd[:i]
+	}
+
+	var reply, help string
+	switch cmd {
+	case "/start", "/menu":
+		s.handleStartCommand(chatID)
+		return
+	case "/traffic":
+		reply = s.getTrafficStats()
+	case "/cost":
+		reply = s.getCostStats()
+	case "/instances":
+		reply = s.getInstanceStats()
+	case "/alive":
+		reply = s.checkAlive()
+	case "/configs":
+		reply = s.getConfigList()
+	case "/version":
+		reply = s.getVersionInfo()
+	default:
+		help = "可用命令：\n/traffic 流量统计\n/cost 每日成本\n/instances 实例统计\n/alive 一键测活\n/configs 配置列表\n/version 版本信息\n/menu 打开按钮菜单"
+	}
+
+	if reply == "" {
+		reply = help
+	}
+	s.doSendMessage(chat, reply, nil)
+}
+
+// setMyCommands 注册 Telegram 命令菜单（用户在输入框输入 / 时可见），
+// 解决「不知道有哪些命令」的问题。失败仅记录日志，不影响主流程。
+func (s *TelegramService) setMyCommands() {
+	s.mu.RLock()
+	botToken := s.botToken
+	s.mu.RUnlock()
+	if botToken == "" {
+		return
+	}
+
+	commands := []map[string]string{
+		{"command": "menu", "description": "打开按钮菜单"},
+		{"command": "traffic", "description": "流量统计（账号月度总量）"},
+		{"command": "cost", "description": "每日成本（发现扣费）"},
+		{"command": "instances", "description": "实例统计"},
+		{"command": "alive", "description": "一键测活"},
+		{"command": "configs", "description": "配置列表"},
+		{"command": "version", "description": "版本信息"},
+	}
+	body, _ := json.Marshal(map[string]any{"commands": commands})
+
+	apiURL := fmt.Sprintf("%s/bot%s/setMyCommands", s.baseURL(), botToken)
+	resp, err := http.Post(apiURL, "application/json", strings.NewReader(string(body)))
+	if err != nil {
+		log.Printf("setMyCommands failed: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+	log.Println("Telegram command menu registered")
+}
+
 func (s *TelegramService) getMainKeyboard() *InlineKeyboardMarkup {
 	return &InlineKeyboardMarkup{
 		InlineKeyboard: [][]InlineKeyboardButton{
 			{
 				{Text: "🔍 一键测活", CallbackData: "check_alive"},
-				{Text: "📋 任务详情", CallbackData: "task_details"},
+				{Text: "💰 每日成本", CallbackData: "cost_stats"},
 			},
 			{
 				{Text: "🖥️ 实例统计", CallbackData: "instance_stats"},
@@ -440,8 +506,8 @@ func (s *TelegramService) handleCallback(callback *struct {
 		text := s.checkAlive()
 		s.editMessage(chatID, messageID, text, s.getMainKeyboard())
 
-	case "task_details":
-		text := s.getTaskDetails()
+	case "cost_stats":
+		text := s.getCostStats()
 		s.editMessage(chatID, messageID, text, s.getMainKeyboard())
 
 	case "instance_stats":
@@ -539,30 +605,49 @@ func (s *TelegramService) checkAlive() string {
 	return result
 }
 
-func (s *TelegramService) getTaskDetails() string {
+// getCostStats 汇总各配置的近 3 日成本，重点提示「是否已产生扣费」。
+func (s *TelegramService) getCostStats() string {
 	db := database.GetDB()
 
-	var tasks []models.OciCreateTask
-	if err := db.Find(&tasks).Error; err != nil {
-		return "❌ 获取任务失败"
+	var users []models.OciUser
+	if err := db.Find(&users).Error; err != nil {
+		return "❌ 获取配置失败"
 	}
 
-	if len(tasks) == 0 {
-		return "【任务详情】\n\n🕐 时间：" + time.Now().Format("2006-01-02 15:04:05") + "\n\n🛎 正在执行的开机任务：无"
+	if len(users) == 0 {
+		return "【每日成本】\n\n暂无配置"
 	}
 
-	var taskInfos []string
-	for _, task := range tasks {
-		info := fmt.Sprintf("[%s] [%s] [%.0f核/%.0fGB/%dGB] [%d台] [%s] [执行%d次]",
-			task.Username, task.Architecture,
-			task.Ocpus, task.Memory, task.Disk,
-			task.CreateNumbers, task.Status, task.ExecuteCount)
-		taskInfos = append(taskInfos, info)
+	lines := parallelMapUsers(users, telegramConcurrency, func(user models.OciUser) string {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		stats, err := s.ociService.GetDailyCost(ctx, &user, 3)
+		if err != nil {
+			return fmt.Sprintf("🔑 %s: ❌ 获取失败（需 usage-report 读取权限）", user.Username)
+		}
+		billable := stats.MonthToDate > 0
+		flag := "✅ 免费额度内"
+		if billable {
+			flag = "⚠️ 已产生费用"
+		}
+		var dayLines []string
+		for _, d := range stats.Days {
+			dayLines = append(dayLines, fmt.Sprintf("   %s：%.4f %s", d.Date, d.Amount, d.Currency))
+		}
+		return fmt.Sprintf("🔑 %s【%s】\n   近3日：\n%s\n   累计：%.4f %s %s",
+			user.Username, flag, strings.Join(dayLines, "\n"), stats.MonthToDate, stats.Currency, "")
+	})
+
+	var out []string
+	for _, l := range lines {
+		if l != "" {
+			out = append(out, l)
+		}
 	}
 
-	return fmt.Sprintf("【任务详情】\n\n🕐 时间：%s\n\n🛎 正在执行的开机任务：\n%s",
+	return fmt.Sprintf("【每日成本】\n\n🕐 时间：%s\n（免费额度内为 0，出现金额即为扣费）\n\n%s",
 		time.Now().Format("2006-01-02 15:04:05"),
-		strings.Join(taskInfos, "\n"))
+		strings.Join(out, "\n\n"))
 }
 
 func (s *TelegramService) getInstanceStats() string {

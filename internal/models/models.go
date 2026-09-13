@@ -179,66 +179,6 @@ func (OciUser) TableName() string {
 	return "oci_user"
 }
 
-type OciCreateTask struct {
-	ID              string     `gorm:"primaryKey;column:id" json:"id"`
-	UserID          string     `gorm:"column:user_id" json:"userId"`
-	Username        string     `gorm:"column:username" json:"username"`
-	OciRegion       string     `gorm:"column:oci_region" json:"ociRegion"`
-	Ocpus           float64    `gorm:"column:ocpus;default:1.0" json:"ocpus"`
-	Memory          float64    `gorm:"column:memory;default:6.0" json:"memory"`
-	Disk            int        `gorm:"column:disk;default:50" json:"disk"`
-	BootVolumeVpu   int64      `gorm:"column:boot_volume_vpu;default:10" json:"bootVolumeVpu"`
-	Architecture    string     `gorm:"column:architecture;default:ARM" json:"architecture"`
-	Interval        int        `gorm:"column:interval;default:60" json:"interval"`
-	CreateNumbers   int        `gorm:"column:create_numbers;default:1" json:"createNumbers"`
-	SSHKeyID        string     `gorm:"column:ssh_key_id" json:"sshKeyId"`
-	OperationSystem string     `gorm:"column:operation_system;default:Ubuntu" json:"operationSystem"`
-	ImageId         string     `gorm:"column:image_id" json:"imageId"`
-	Status          string     `gorm:"column:status;default:running" json:"status"`
-	ExecuteCount    int        `gorm:"column:execute_count;default:0" json:"executeCount"`
-	SuccessCount    int        `gorm:"column:success_count;default:0" json:"successCount"`
-	LastExecuteTime *time.Time `gorm:"column:last_execute_time" json:"lastExecuteTime"`
-	LastMessage     string     `gorm:"column:last_message;type:text" json:"lastMessage"`
-	CreateTime      time.Time  `gorm:"column:create_time;autoCreateTime" json:"createTime"`
-}
-
-func (OciCreateTask) TableName() string {
-	return "oci_create_task"
-}
-
-// TaskLog 任务执行日志
-type TaskLog struct {
-	ID          string    `gorm:"primaryKey;column:id" json:"id"`
-	TaskID      string    `gorm:"column:task_id;index" json:"taskId"`
-	Status      string    `gorm:"column:status" json:"status"`
-	Message     string    `gorm:"column:message;type:text" json:"message"`
-	ExecuteTime time.Time `gorm:"column:execute_time;autoCreateTime" json:"executeTime"`
-}
-
-func (TaskLog) TableName() string {
-	return "task_log"
-}
-
-// TaskListResponse 任务列表响应
-type TaskListResponse struct {
-	ID              string  `json:"id"`
-	UserID          string  `json:"userId"`
-	Username        string  `json:"username"`
-	OciRegion       string  `json:"ociRegion"`
-	Ocpus           float64 `json:"ocpus"`
-	Memory          float64 `json:"memory"`
-	Disk            int     `json:"disk"`
-	Architecture    string  `json:"architecture"`
-	Interval        int     `json:"interval"`
-	OperationSystem string  `json:"operationSystem"`
-	Status          string  `json:"status"`
-	ExecuteCount    int     `json:"executeCount"`
-	SuccessCount    int     `json:"successCount"`
-	LastExecuteTime string  `json:"lastExecuteTime"`
-	LastMessage     string  `json:"lastMessage"`
-	CreateTime      string  `json:"createTime"`
-}
-
 type OciKv struct {
 	ID         string    `gorm:"primaryKey;column:id" json:"id"`
 	Code       string    `gorm:"column:code;not null" json:"code"`
@@ -322,69 +262,6 @@ func (OciImageCache) TableName() string {
 	return "oci_image_cache"
 }
 
-// SSHKey SSH密钥表
-type SSHKey struct {
-	ID         string    `gorm:"primaryKey;column:id" json:"id"`
-	Name       string    `gorm:"column:name;not null" json:"name"`
-	PublicKey  string    `gorm:"column:public_key;type:text;not null" json:"publicKey"`
-	PrivateKey string    `gorm:"column:private_key;type:text" json:"privateKey"`
-	KeyType    string    `gorm:"column:key_type;not null" json:"keyType"` // config: 配置关联, standalone: 独立上传
-	ConfigID   string    `gorm:"column:config_id" json:"configId"`        // 关联的配置ID，独立上传时为空
-	CreateTime time.Time `gorm:"column:create_time;autoCreateTime" json:"createTime"`
-}
-
-func (SSHKey) TableName() string {
-	return "ssh_key"
-}
-
-// SSHKeyResponse SSH密钥响应
-type SSHKeyResponse struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	PublicKey  string `json:"publicKey"`
-	KeyType    string `json:"keyType"`
-	ConfigID   string `json:"configId"`
-	ConfigName string `json:"configName"`
-	CreateTime string `json:"createTime"`
-}
-
-// InstancePreset 实例预设配置
-type InstancePreset struct {
-	ID              string    `gorm:"primaryKey;column:id" json:"id"`
-	Name            string    `gorm:"column:name;not null" json:"name"`
-	Ocpus           float64   `gorm:"column:ocpus;default:1.0" json:"ocpus"`
-	Memory          float64   `gorm:"column:memory;default:6.0" json:"memory"`
-	Disk            int       `gorm:"column:disk;default:50" json:"disk"`
-	BootVolumeVpu   int64     `gorm:"column:boot_volume_vpu;default:10" json:"bootVolumeVpu"`
-	Architecture    string    `gorm:"column:architecture;default:ARM" json:"architecture"`
-	OperationSystem string    `gorm:"column:operation_system;default:Ubuntu" json:"operationSystem"`
-	ImageID         string    `gorm:"column:image_id" json:"imageId"`
-	SSHKeyID        string    `gorm:"column:ssh_key_id" json:"sshKeyId"`
-	Description     string    `gorm:"column:description;type:text" json:"description"`
-	CreateTime      time.Time `gorm:"column:create_time;autoCreateTime" json:"createTime"`
-}
-
-func (InstancePreset) TableName() string {
-	return "instance_preset"
-}
-
-// InstancePresetResponse 实例预设配置响应
-type InstancePresetResponse struct {
-	ID              string  `json:"id"`
-	Name            string  `json:"name"`
-	Ocpus           float64 `json:"ocpus"`
-	Memory          float64 `json:"memory"`
-	Disk            int     `json:"disk"`
-	BootVolumeVpu   int64   `json:"bootVolumeVpu"`
-	Architecture    string  `json:"architecture"`
-	OperationSystem string  `json:"operationSystem"`
-	ImageID         string  `json:"imageId"`
-	SSHKeyID        string  `json:"sshKeyId"`
-	SSHKeyName      string  `json:"sshKeyName"`
-	Description     string  `json:"description"`
-	CreateTime      string  `json:"createTime"`
-}
-
 type ResponseData struct {
 	Code    int         `json:"code"`
 	Message string      `json:"message"`
@@ -412,16 +289,12 @@ func ErrorResponse(code int, message string) ResponseData {
 func AutoMigrate(db *gorm.DB) error {
 	return db.AutoMigrate(
 		&OciUser{},
-		&OciCreateTask{},
-		&TaskLog{},
 		&OciKv{},
 		&CfCfg{},
 		&IpData{},
 		&SysSetting{},
 		&OciConfigCache{},
 		&OciImageCache{},
-		&SSHKey{},
-		&InstancePreset{},
 		&AdminUser{},
 		&ApiToken{},
 		&TokenCallLog{},

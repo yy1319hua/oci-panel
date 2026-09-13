@@ -23,13 +23,15 @@ func TestMFAChallengeIsBoundAndSingleUse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sc.consumeMFAChallenge(ticket, "other-account", code, key.Secret()) {
-		t.Fatal("MFA challenge was accepted for a different account")
+	// challenge 内部绑定 account，错误验证码不应被接受
+	if _, ok := sc.consumeMFAChallenge(ticket, "000000", key.Secret()); ok {
+		t.Fatal("MFA challenge was accepted with an invalid code")
 	}
-	if !sc.consumeMFAChallenge(ticket, "admin", code, key.Secret()) {
-		t.Fatal("valid MFA challenge was rejected")
+	account, ok := sc.consumeMFAChallenge(ticket, code, key.Secret())
+	if !ok || account != "admin" {
+		t.Fatal("valid MFA challenge was rejected or returned wrong account")
 	}
-	if sc.consumeMFAChallenge(ticket, "admin", code, key.Secret()) {
+	if _, ok := sc.consumeMFAChallenge(ticket, code, key.Secret()); ok {
 		t.Fatal("MFA challenge was accepted more than once")
 	}
 }
@@ -46,7 +48,7 @@ func TestMFAChallengeLocksAfterFailedAttempts(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := 0; i < mfaChallengeTries; i++ {
-		if sc.consumeMFAChallenge(ticket, "admin", "000000", key.Secret()) {
+		if _, ok := sc.consumeMFAChallenge(ticket, "000000", key.Secret()); ok {
 			t.Fatal("invalid MFA code was accepted")
 		}
 	}
@@ -54,7 +56,7 @@ func TestMFAChallengeLocksAfterFailedAttempts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sc.consumeMFAChallenge(ticket, "admin", code, key.Secret()) {
+	if _, ok := sc.consumeMFAChallenge(ticket, code, key.Secret()); ok {
 		t.Fatal("MFA challenge remained usable after maximum failed attempts")
 	}
 }

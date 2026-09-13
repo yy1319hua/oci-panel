@@ -17,6 +17,7 @@ import (
 	"github.com/oracle/oci-go-sdk/v65/identitydomains"
 	"github.com/oracle/oci-go-sdk/v65/monitoring"
 	"github.com/oracle/oci-go-sdk/v65/networkloadbalancer"
+	"github.com/oracle/oci-go-sdk/v65/usageapi"
 )
 
 type OCIService struct {
@@ -43,6 +44,7 @@ type cachedClients struct {
 	identity       *identity.IdentityClient
 	monitoring     *monitoring.MonitoringClient
 	nlb            *networkloadbalancer.NetworkLoadBalancerClient
+	usage          *usageapi.UsageapiClient
 	mu             sync.Mutex
 }
 
@@ -264,6 +266,28 @@ func (s *OCIService) GetMonitoringClient(user *models.OciUser) (monitoring.Monit
 		return monitoring.MonitoringClient{}, err
 	}
 	cc.monitoring = &client
+	return client, nil
+}
+
+// GetUsageapiClient 返回 Usage API 客户端（账单/成本查询，需 USAGE_REPORT_READ 权限）。
+func (s *OCIService) GetUsageapiClient(user *models.OciUser) (usageapi.UsageapiClient, error) {
+	cc, err := s.getCachedClients(user)
+	if err != nil {
+		return usageapi.UsageapiClient{}, err
+	}
+
+	cc.mu.Lock()
+	defer cc.mu.Unlock()
+
+	if cc.usage != nil {
+		return *cc.usage, nil
+	}
+
+	client, err := usageapi.NewUsageapiClientWithConfigurationProvider(cc.configProvider)
+	if err != nil {
+		return usageapi.UsageapiClient{}, err
+	}
+	cc.usage = &client
 	return client, nil
 }
 

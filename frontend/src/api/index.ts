@@ -1,5 +1,5 @@
 // 类型化 API 层（C6）：集中封装后端端点，按域分模块。
-// 调用方统一从 `@/api` 导入域对象（如 `import { ociApi, taskApi } from '@/api'`），
+// 调用方统一从 `@/api` 导入域对象（如 `import { ociApi, sysApi } from '@/api'`），
 // 运行时等价于原先的 `api.post/api.get`，但带请求/响应类型。
 
 export type { ApiResponse, PageResult, ValueLabel } from './http'
@@ -31,6 +31,13 @@ export type {
   ImageInfo,
   TrafficCondition,
   TrafficData,
+  InstanceTrafficStat,
+  MonthlyTrafficStats,
+  DailyCost,
+  CostStats,
+  SecurityRule,
   SecurityListData,
-  AddSecurityRuleReq
+  AddSecurityRuleReq,
+  UpdateSecurityRuleReq,
+  DeleteSecurityRuleReq
 } from './oci'

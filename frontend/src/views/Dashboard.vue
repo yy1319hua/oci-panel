@@ -301,24 +301,29 @@ onMounted(() => {
           <ArrowRight class="w-4 h-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div class="flex items-end gap-8">
+          <div class="flex flex-wrap items-end gap-8">
             <div>
-              <p class="text-sm text-muted-foreground">总流量（实际）</p>
+              <p class="text-sm text-muted-foreground">总流量（本月实际）</p>
               <p class="text-2xl font-bold font-display">
                 {{ formatBytes(traffic.totalBytes).value }}<span class="text-base ml-1 text-muted-foreground">{{ formatBytes(traffic.totalBytes).unit }}</span>
               </p>
             </div>
             <div>
-              <p class="text-sm text-muted-foreground">计费</p>
-              <p class="text-2xl font-bold font-display">
+              <p class="text-sm text-muted-foreground">计费出站（超 10TB 部分）</p>
+              <p class="text-2xl font-bold font-display" :class="traffic.billableBytes > 0 ? 'text-destructive' : ''">
                 {{ formatBytes(traffic.billableBytes).value }}<span class="text-base ml-1 text-muted-foreground">{{ formatBytes(traffic.billableBytes).unit }}</span>
               </p>
             </div>
           </div>
 
-          <div class="mt-4 flex items-center justify-between text-xs text-muted-foreground">
-            <span>免费额度 {{ formatBytes(traffic.freeAllowance).value }} {{ formatBytes(traffic.freeAllowance).unit }} · 已用 {{ traffic.allowancePct.toFixed(1) }}%</span>
-            <span class="text-emerald-400">入 {{ formatBytes(traffic.inboundBytes).value }}{{ formatBytes(traffic.inboundBytes).unit }} / 出 {{ formatBytes(traffic.outboundBytes).value }}{{ formatBytes(traffic.outboundBytes).unit }}</span>
+          <p class="mt-3 text-xs text-muted-foreground">
+            甲骨文按账号计流量：<span class="text-foreground/80">入站免费</span>，
+            仅<span class="text-foreground/80">出站</span>超出免费额度才计费。
+          </p>
+
+          <div class="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+            <span>免费额度 {{ formatBytes(traffic.freeAllowance).value }} {{ formatBytes(traffic.freeAllowance).unit }} · 出站已用 {{ traffic.allowancePct.toFixed(1) }}%</span>
+            <span><span class="text-emerald-400">入 {{ formatBytes(traffic.inboundBytes).value }}{{ formatBytes(traffic.inboundBytes).unit }}</span> / <span class="text-amber-400">出 {{ formatBytes(traffic.outboundBytes).value }}{{ formatBytes(traffic.outboundBytes).unit }}</span></span>
           </div>
           <div class="mt-1 h-2 rounded-full bg-slate-800 overflow-hidden">
             <div class="h-full rounded-full" :style="{ width: traffic.allowancePct + '%', background: 'linear-gradient(90deg,#22d3ee,#34d399)' }"></div>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, reactive, watch } from 'vue'
-import { X, Loader2, RefreshCw, Settings, Server, HardDrive, Network, BarChart3 } from 'lucide-vue-next'
+import { X, Loader2, RefreshCw, Settings, Server, HardDrive, Network, BarChart3, Wallet } from 'lucide-vue-next'
 import { ociApi, instanceApi } from '@/api'
 import { toast } from '@/composables/useToast'
 import { Button } from '@/components/ui/button'
@@ -8,11 +8,13 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import type { Config, Instance } from '@/views/configs/types'
+import type { CostStats } from '@/api'
 import BasicInfoTab from './tabs/BasicInfoTab.vue'
 import InstancesTab from './tabs/InstancesTab.vue'
 import VolumesTab from './tabs/VolumesTab.vue'
 import VcnsTab from './tabs/VcnsTab.vue'
 import TrafficTab from './tabs/TrafficTab.vue'
+import CostTab from './tabs/CostTab.vue'
 import UserListCard from './UserListCard.vue'
 import EditInstanceModal from './EditInstanceModal.vue'
 import CloudShellModal from './CloudShellModal.vue'
@@ -51,6 +53,12 @@ const tabTraffic = ref<{ time: string[]; inbound: string[]; outbound: string[] }
 })
 const instanceActionLoading = reactive<Record<string, boolean>>({})
 
+// 成本统计
+const tabCost = ref<CostStats | null>(null)
+const loadingCost = ref(false)
+const costError = ref('')
+const costDays = ref(30)
+
 // 流量查询
 const trafficCondition = ref<{ instances: { value: string; label: string }[] }>({ instances: [] })
 const trafficVnics = ref<{ value: string; label: string }[]>([])
@@ -76,7 +84,8 @@ const tabs = [
   { key: 'instances', label: '实例列表', icon: Server },
   { key: 'volumes', label: '引导卷', icon: HardDrive },
   { key: 'vcns', label: 'VCN网络', icon: Network },
-  { key: 'traffic', label: '流量统计', icon: BarChart3 }
+  { key: 'traffic', label: '流量统计', icon: BarChart3 },
+  { key: 'cost', label: '成本统计', icon: Wallet }
 ]
 
 const pad = (n: number) => n.toString().padStart(2, '0')
@@ -98,6 +107,9 @@ const initDetails = async (config: Config) => {
   tabVCNs.value = []
   tabTenant.value = null
   tabTraffic.value = { time: [], inbound: [], outbound: [] }
+  tabCost.value = null
+  costError.value = ''
+  costDays.value = 30
   trafficCondition.value = { instances: [] }
   trafficVnics.value = []
   trafficForm.value = { instanceId: '', vnicId: '', startTime: '', endTime: '' }
@@ -121,6 +133,8 @@ const resetDetails = () => {
   tabVCNs.value = []
   tabTenant.value = null
   tabTraffic.value = { time: [], inbound: [], outbound: [] }
+  tabCost.value = null
+  costError.value = ''
 }
 
 watch(
@@ -188,6 +202,23 @@ const loadVCNs = async (clearCache = false) => {
   }
 }
 
+// 成本统计（每日费用）：失败不弹 toast，改为在标签页内展示可读错误（多为权限未授予）。
+const loadCost = async (days = costDays.value) => {
+  if (!configDetails.value) return
+  costDays.value = days
+  loadingCost.value = true
+  costError.value = ''
+  try {
+    const response = await ociApi.dailyCost({ configId: configDetails.value.userId, days })
+    tabCost.value = response.data || null
+  } catch (error: any) {
+    tabCost.value = null
+    costError.value = error.message || '查询成本失败'
+  } finally {
+    loadingCost.value = false
+  }
+}
+
 const loadTrafficCondition = async () => {
   if (!configDetails.value) return
   try {
@@ -248,6 +279,7 @@ const refreshCurrentTab = async () => {
   else if (activeTab.value === 'volumes') await loadVolumes(true)
   else if (activeTab.value === 'vcns') await loadVCNs(true)
   else if (activeTab.value === 'traffic') await loadTrafficCondition()
+  else if (activeTab.value === 'cost') await loadCost()
 }
 
 watch(activeTab, newTab => {
@@ -256,6 +288,7 @@ watch(activeTab, newTab => {
   else if (newTab === 'volumes' && tabVolumes.value.length === 0) loadVolumes()
   else if (newTab === 'vcns' && tabVCNs.value.length === 0) loadVCNs()
   else if (newTab === 'traffic' && trafficCondition.value.instances.length === 0) loadTrafficCondition()
+  else if (newTab === 'cost' && !tabCost.value && !loadingCost.value) loadCost()
 })
 
 watch(
@@ -499,6 +532,16 @@ const openSecurityList = (vcn: any) => {
                 :traffic="tabTraffic"
                 :loading="loadingTraffic"
                 @query="loadTrafficData"
+              />
+
+              <!-- Cost Tab -->
+              <CostTab
+                v-show="activeTab === 'cost'"
+                :cost="tabCost"
+                :loading="loadingCost"
+                :error="costError"
+                :days="costDays"
+                @reload="loadCost"
               />
             </div>
           </div>

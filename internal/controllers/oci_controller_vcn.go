@@ -85,6 +85,67 @@ func (oc *OciController) AddSecurityRule(c *gin.Context) {
 	c.JSON(http.StatusOK, models.SuccessResponse(nil, "安全规则添加成功"))
 }
 
+// UpdateSecurityRuleRequest 修改安全规则请求（oldRule 定位，newRule 为改后的值）
+type UpdateSecurityRuleRequest struct {
+	ConfigID  string               `json:"configId" binding:"required"`
+	VcnID     string               `json:"vcnId" binding:"required"`
+	IsIngress bool                 `json:"isIngress"`
+	OldRule   *models.SecurityRule `json:"oldRule" binding:"required"`
+	NewRule   *models.SecurityRule `json:"newRule" binding:"required"`
+}
+
+// UpdateSecurityRule 修改一条安全规则
+func (oc *OciController) UpdateSecurityRule(c *gin.Context) {
+	var req UpdateSecurityRuleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse(400, err.Error()))
+		return
+	}
+
+	user, ok := oc.loadUser(c, req.ConfigID)
+	if !ok {
+		return
+	}
+
+	ctx := context.Background()
+	if err := oc.ociService.ModifySecurityRule(ctx, &user, req.VcnID, req.IsIngress, req.OldRule, req.NewRule); err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse(500, err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusOK, models.SuccessResponse(nil, "安全规则修改成功"))
+}
+
+// DeleteSecurityRuleRequest 删除单条安全规则请求
+type DeleteSecurityRuleRequest struct {
+	ConfigID  string               `json:"configId" binding:"required"`
+	VcnID     string               `json:"vcnId" binding:"required"`
+	IsIngress bool                 `json:"isIngress"`
+	Rule      *models.SecurityRule `json:"rule" binding:"required"`
+}
+
+// DeleteSecurityRule 删除一条安全规则
+func (oc *OciController) DeleteSecurityRule(c *gin.Context) {
+	var req DeleteSecurityRuleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse(400, err.Error()))
+		return
+	}
+
+	user, ok := oc.loadUser(c, req.ConfigID)
+	if !ok {
+		return
+	}
+
+	ctx := context.Background()
+	if err := oc.ociService.DeleteSecurityRule(ctx, &user, req.VcnID, req.IsIngress, req.Rule); err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse(500, err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusOK, models.SuccessResponse(nil, "安全规则删除成功"))
+}
+
 // ReleaseSecurityRulesRequest 放行安全规则请求
 type ReleaseSecurityRulesRequest struct {
 	ConfigID string `json:"configId" binding:"required"`
