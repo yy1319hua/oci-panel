@@ -1,0 +1,29 @@
+# CI 运行时镜像 —— 由 .github/workflows/build.yml 使用。
+#
+# 与仓库根目录的 Dockerfile 的区别：
+#   根目录 Dockerfile 是「三阶段全量构建」（含 node 装依赖、go 编译），
+#   供本地/盒子上 `docker build` 使用；
+#   本文件只做**组装**：Go 二进制与前端 dist 已由 Actions 预先构建好，
+#   构建上下文里直接放的是产物。这样镜像构建只需几秒，
+#   且 arm64 二进制来自 Go 原生交叉编译，不经过 QEMU 模拟。
+#
+# 构建上下文（由 workflow 准备）：
+#   oci-panel          — linux/arm64 的 Go 二进制
+#   frontend-dist/     — 前端构建产物
+#   config.toml        — 配置模板
+FROM alpine:3.21
+
+WORKDIR /app
+
+# ca-certificates 用于访问 OCI / Telegram 的 HTTPS；
+# tzdata 用于日志与流量统计的本地时区显示（用户环境为 Asia/Shanghai）。
+RUN sed -i 's#dl-cdn.alpinelinux.org#mirrors.aliyun.com#g' /etc/apk/repositories \
+    && apk add --no-cache ca-certificates tzdata
+
+COPY oci-panel ./oci-panel
+COPY frontend-dist ./frontend/dist
+COPY config.toml ./config.toml
+
+EXPOSE 8999
+
+CMD ["./oci-panel"]

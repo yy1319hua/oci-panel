@@ -1,0 +1,156 @@
+name: Build and Push Image
+
+# 触发策略：
+#  - 推送 v* 标签：构建并以该标签 + latest 推送到 GHCR（正式发布）
+#  - 手动触发：可选是否同时打 latest（用于验证构建流程）
+#  - 推送到 main 不自动构建，避免每次提交都消耗 Actions 额度
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      push_latest:
+        description: '同时推送 latest 标签'
+        type: boolean
+        default: true
+      ref:
+        description: '要构建的 git 引用（留空则用当前触发点）'
+        required: false
+
+# 只读权限 + packages:write（推 GHCR 必需）。GITHUB_TOKEN 自动具备该权限，
+# 无需配置 PAT。
+permissions:
+  contents: read
+  packages: write
+
+# 同一分支/标签的并发构建只保留最新一次，避免快速连推时互相覆盖镜像标签。
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # 需要完整 tag 历史，供 git describe 推导版本号。
+          fetch-depth: 0
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: go.sum
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Run Go tests
+        run: go test ./...
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci --ignore-scripts
+          npm run build
+
+      # 版本号唯一数据源：git tag。
+      # 通过 -ldflags 注入到 version.AppVersion，前后端与 Telegram 均读取该值。
+      - name: Resolve version
+        id: version
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF_NAME}"
+          else
+            # 无 tag 时回退到 describe（如 v1.0.8-3-gabcdef），保证版本可追溯。
+            VERSION="$(git describe --tags --always)"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "resolved version: ${VERSION}"
+
+      # 后端与前端产物一起构建，再把前端 dist 打进镜像。
+      # 关键：GOARCH=arm64 + CGO_ENABLED=0 走 Go 原生交叉编译，
+      # 不依赖 QEMU 模拟（QEMU 下编译 Go 会慢数倍）。
+      - name: Build backend for linux/arm64
+        env:
+          CGO_ENABLED: '0'
+          GOOS: linux
+          GOARCH: arm64
+        run: |
+          go build \
+            -ldflags "-s -w -X github.com/adiecho/oci-panel/internal/version.AppVersion=${{ steps.version.outputs.version }}" \
+            -o build/linux-arm64/oci-panel main.go
+          ls -lh build/linux-arm64/oci-panel
+
+      - name: Prepare image context
+        run: |
+          mkdir -p image-context
+          cp build/linux-arm64/oci-panel image-context/oci-panel
+          cp -r frontend/dist image-context/frontend-dist
+          cp config.toml.example image-context/config.toml
+          cp .github/ci/Dockerfile.runtime image-context/Dockerfile
+          ls -la image-context/
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=tag
+            type=raw,value=latest,enable=${{ github.event_name == 'push' || inputs.push_latest }}
+            type=sha,prefix=sha-,format=short
+
+      # 只推 arm64：目标设备是 arm64 盒子。多架构会显著拖慢构建，
+      # 且 amd64 镜像当前无用例。
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: image-context
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        run: |
+          {
+            echo "## 构建完成"
+            echo ""
+            echo "**版本**: \`${{ steps.version.outputs.version }}\`"
+            echo ""
+            echo "**镜像标签**:"
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+            echo ""
+            echo "**部署到盒子**（在盒子上执行）:"
+            echo '```bash'
+            echo "echo '<GHCR_TOKEN>' | sudo docker login ghcr.io -u <你的GitHub用户名> --password-stdin"
+            echo "sudo docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
