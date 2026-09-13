@@ -29,10 +29,11 @@ func newTestTelegramService(token, apiBase string) *TelegramService {
 // 导致保存配置后菜单停留在旧版本。
 func TestSetMyCommandsRegistersAndRefreshes(t *testing.T) {
 	var (
-		mu       sync.Mutex
-		gotPaths []string
-		lastBody []map[string]string
-		calls    int32
+		mu        sync.Mutex
+		gotPaths  []string
+		gotScopes []string
+		lastBody  []map[string]string
+		calls     int32
 	)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -41,11 +42,20 @@ func TestSetMyCommandsRegistersAndRefreshes(t *testing.T) {
 
 		var parsed struct {
 			Commands []map[string]string `json:"commands"`
+			Scope    map[string]any      `json:"scope"`
 		}
 		_ = json.Unmarshal(raw, &parsed)
 
+		scopeName := "default"
+		if parsed.Scope != nil {
+			if s, _ := parsed.Scope["type"].(string); s != "" {
+				scopeName = s
+			}
+		}
+
 		mu.Lock()
 		gotPaths = append(gotPaths, r.URL.Path)
+		gotScopes = append(gotScopes, scopeName)
 		lastBody = parsed.Commands
 		mu.Unlock()
 
@@ -53,14 +63,16 @@ func TestSetMyCommandsRegistersAndRefreshes(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc := newTestTelegramService("123:ABC", srv.URL)
+	// 带 chatID：应当覆盖 default + all_private_chats + chat 三个作用域。
+	svc := &TelegramService{botToken: "123:ABC", apiBase: srv.URL, chatID: "12345"}
 
 	// 调用两次，模拟「启动时注册 + 保存配置后再次注册」。
 	svc.setMyCommands()
 	svc.setMyCommands()
 
-	if n := atomic.LoadInt32(&calls); n != 2 {
-		t.Fatalf("期望发出 2 次注册请求，实际 %d 次（重试不应在成功路径触发）", n)
+	// 3 个作用域 × 2 次调用 = 6 次请求（成功路径不应触发重试）。
+	if n := atomic.LoadInt32(&calls); n != 6 {
+		t.Fatalf("期望发出 6 次注册请求，实际 %d 次（重试不应在成功路径触发）", n)
 	}
 
 	mu.Lock()
@@ -68,6 +80,16 @@ func TestSetMyCommandsRegistersAndRefreshes(t *testing.T) {
 	for _, p := range gotPaths {
 		if p != "/bot123:ABC/setMyCommands" {
 			t.Fatalf("请求路径错误: %q", p)
+		}
+	}
+	seen := map[string]bool{}
+	for _, s := range gotScopes {
+		seen[s] = true
+	}
+	// 这是本次修复的核心：必须覆盖到高优先级作用域，否则会被旧程序残留的命令遮蔽。
+	for _, want := range []string{"default", "all_private_chats", "chat"} {
+		if !seen[want] {
+			t.Fatalf("命令未注册到作用域 %q（实际: %v）", want, gotScopes)
 		}
 	}
 	if len(lastBody) == 0 {
@@ -125,9 +147,9 @@ func TestSetMyCommandsTreatsOkFalseAsFailure(t *testing.T) {
 	svc := newTestTelegramService("123:ABC", srv.URL)
 	svc.setMyCommands()
 
-	// ok:false 必须触发完整重试（3 次）
-	if n := atomic.LoadInt32(&calls); n != 3 {
-		t.Fatalf("ok:false 应触发 3 次重试，实际 %d 次", n)
+	// ok:false 必须对每个作用域各触发完整重试（无 chatID 时为 2 个作用域 × 3 次 = 6 次）。
+	if n := atomic.LoadInt32(&calls); n != 6 {
+		t.Fatalf("ok:false 应在每个作用域重试 3 次（共 6 次），实际 %d 次", n)
 	}
 }
 
@@ -287,5 +309,42 @@ func TestSetMenuButtonUsesCommandsWithoutURL(t *testing.T) {
 	btn, _ := bodies[0]["menu_button"].(map[string]any)
 	if btn["type"] != "commands" {
 		t.Fatalf("期望 commands，实际 %v", btn["type"])
+	}
+}
+
+// TestSetMenuButtonCoversChatScope 验证配置了 chatID 时，菜单按钮会同时应用到
+// 全局默认与「该会话专属」两个作用域 —— 后者优先级更高，用于覆盖旧程序残留的按钮。
+func TestSetMenuButtonCoversChatScope(t *testing.T) {
+	var mu sync.Mutex
+	var bodies []map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		var parsed map[string]any
+		_ = json.Unmarshal(raw, &parsed)
+		mu.Lock()
+		bodies = append(bodies, parsed)
+		mu.Unlock()
+		_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
+	}))
+	defer srv.Close()
+
+	svc := &TelegramService{botToken: "123:ABC", apiBase: srv.URL, chatID: "12345"}
+	svc.setMenuButton()
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(bodies) != 2 {
+		t.Fatalf("期望全局默认 + 会话专属共 2 次请求，实际 %d", len(bodies))
+	}
+	var hasGlobal, hasChat bool
+	for _, b := range bodies {
+		if _, ok := b["chat_id"]; ok {
+			hasChat = true
+		} else {
+			hasGlobal = true
+		}
+	}
+	if !hasGlobal || !hasChat {
+		t.Fatalf("菜单按钮应同时覆盖全局默认与会话专属作用域（global=%v chat=%v）", hasGlobal, hasChat)
 	}
 }

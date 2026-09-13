@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -442,24 +443,9 @@ func (s *TelegramService) handleCommand(chatID int64, text string) {
 	s.doSendMessage(chat, reply, nil)
 }
 
-// setMyCommands 注册 Telegram 命令菜单（用户在输入框输入 / 时可见），
-// 解决「不知道有哪些命令」的问题。
-//
-// 关键点：Telegram 服务端会**缓存**命令菜单，只有再次调用 setMyCommands 才会刷新。
-// 因此这里必须在「bot 启动」和「配置变更（尤其是换 bot token）」两个时机都调用，
-// 否则改了命令列表、用户看到的仍是旧菜单。
-//
-// 失败会重试若干次：这是启动路径上的非关键调用，失败不应阻断 bot 运行，
-// 但也绝不能一次失败就永久放弃 —— 那样菜单会静默停留在旧状态，很难排查。
-func (s *TelegramService) setMyCommands() {
-	s.mu.RLock()
-	botToken := s.botToken
-	s.mu.RUnlock()
-	if botToken == "" {
-		return
-	}
-
-	commands := []map[string]string{
+// telegramCommands 返回面板对外暴露的命令列表。
+func telegramCommands() []map[string]string {
+	return []map[string]string{
 		{"command": "start", "description": "开始 / 打开面板"},
 		{"command": "menu", "description": "打开按钮菜单"},
 		{"command": "traffic", "description": "流量统计（账号月度总量）"},
@@ -469,10 +455,71 @@ func (s *TelegramService) setMyCommands() {
 		{"command": "configs", "description": "配置列表"},
 		{"command": "version", "description": "版本信息"},
 	}
-	body, err := json.Marshal(map[string]any{"commands": commands})
-	if err != nil {
-		log.Printf("setMyCommands: 序列化命令失败: %v", err)
+}
+
+// commandScopes 返回需要注册命令的作用域列表。
+//
+// 关键点（踩过的坑）：Telegram 命令列表按**作用域**分层，在同一个会话里取命令时
+// 只采用「优先级最高的那一层」，优先级从高到低为：
+//
+//	chat（指定会话） > all_private_chats > default
+//
+// 如果别的程序（例如早先共用同一个 bot 的 AI agent）曾在 all_private_chats 或
+// chat 等更高作用域注册过命令，那么即便我们在 default 作用域注册了面板命令，
+// 用户点开菜单看到的仍是那一层残留的旧命令 —— 表现为「菜单里根本没有
+// traffic / cost」。只改命令列表、不覆盖作用域是修不好的。
+//
+// 因此这里把同一份命令注册到所有与私聊相关的作用域，直接覆盖旧命令；
+// 其中 chat 作用域优先级最高，注册后用户必定看到面板命令。
+func (s *TelegramService) commandScopes(chatID string) []map[string]any {
+	// nil 表示不带 scope 字段，即 default 作用域。
+	scopes := []map[string]any{
+		nil,
+		{"type": "all_private_chats"},
+	}
+	// chat 作用域仅接受私聊用户 id（正整数）。chatID 可能是群组/空值，故先校验。
+	if id, err := strconv.ParseInt(strings.TrimSpace(chatID), 10, 64); err == nil && id > 0 {
+		scopes = append(scopes, map[string]any{"type": "chat", "chat_id": id})
+	}
+	return scopes
+}
+
+// setMyCommands 把命令菜单注册到所有相关作用域（见 commandScopes 说明）。
+//
+// Telegram 服务端会**缓存**命令菜单，只有再次调用 setMyCommands 才会刷新，
+// 故必须在「bot 启动」和「配置变更（尤其是换 bot token）」两个时机都调用。
+func (s *TelegramService) setMyCommands() {
+	s.mu.RLock()
+	botToken := s.botToken
+	chatID := s.chatID
+	s.mu.RUnlock()
+	if botToken == "" {
 		return
+	}
+
+	commands := telegramCommands()
+	for _, scope := range s.commandScopes(chatID) {
+		s.postSetMyCommands(botToken, commands, scope)
+	}
+}
+
+// postSetMyCommands 在单个作用域注册命令，失败重试。
+//
+// 这是启动路径上的非关键调用，失败不应阻断 bot 运行，但也绝不能一次失败就永久
+// 放弃 —— 那样菜单会静默停留在旧状态，很难排查。
+func (s *TelegramService) postSetMyCommands(botToken string, commands []map[string]string, scope map[string]any) bool {
+	payload := map[string]any{"commands": commands}
+	label := "default"
+	if scope != nil {
+		payload["scope"] = scope
+		if t, _ := scope["type"].(string); t != "" {
+			label = t
+		}
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("setMyCommands[%s]: 序列化命令失败: %v", label, err)
+		return false
 	}
 
 	// 重试：反代/网络抖动都可能导致单次失败。命令菜单是幂等操作，重试无副作用。
@@ -487,7 +534,7 @@ func (s *TelegramService) setMyCommands() {
 		resp, err := http.Post(apiURL, "application/json", bytes.NewReader(body))
 		if err != nil {
 			lastErr = err
-			log.Printf("setMyCommands 第 %d/%d 次失败: %v", attempt, maxAttempts, err)
+			log.Printf("setMyCommands[%s] 第 %d/%d 次失败: %v", label, attempt, maxAttempts, err)
 			continue
 		}
 
@@ -498,7 +545,7 @@ func (s *TelegramService) setMyCommands() {
 
 		if resp.StatusCode != http.StatusOK {
 			lastErr = fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
-			log.Printf("setMyCommands 第 %d/%d 次失败: %v", attempt, maxAttempts, lastErr)
+			log.Printf("setMyCommands[%s] 第 %d/%d 次失败: %v", label, attempt, maxAttempts, lastErr)
 			continue
 		}
 
@@ -508,20 +555,21 @@ func (s *TelegramService) setMyCommands() {
 		}
 		if err := json.Unmarshal(respBody, &parsed); err != nil {
 			lastErr = fmt.Errorf("解析响应失败: %w", err)
-			log.Printf("setMyCommands 第 %d/%d 次失败: %v", attempt, maxAttempts, lastErr)
+			log.Printf("setMyCommands[%s] 第 %d/%d 次失败: %v", label, attempt, maxAttempts, lastErr)
 			continue
 		}
 		if !parsed.Ok {
 			lastErr = fmt.Errorf("telegram 返回失败: %s", parsed.Description)
-			log.Printf("setMyCommands 第 %d/%d 次失败: %v", attempt, maxAttempts, lastErr)
+			log.Printf("setMyCommands[%s] 第 %d/%d 次失败: %v", label, attempt, maxAttempts, lastErr)
 			continue
 		}
 
-		log.Printf("Telegram 命令菜单已注册（%d 个命令）", len(commands))
-		return
+		log.Printf("Telegram 命令菜单已注册（作用域 %s，%d 个命令）", label, len(commands))
+		return true
 	}
 
-	log.Printf("setMyCommands 连续 %d 次失败，命令菜单可能仍为旧版本: %v", maxAttempts, lastErr)
+	log.Printf("setMyCommands[%s] 连续 %d 次失败，命令菜单可能仍为旧版本: %v", label, maxAttempts, lastErr)
+	return false
 }
 
 // setMenuButton 配置 Telegram 聊天框右下角的「菜单按钮」（Menu Button）。
@@ -543,36 +591,59 @@ func (s *TelegramService) setMenuButton() {
 	s.mu.RLock()
 	botToken := s.botToken
 	panelURL := s.panelURL
+	chatID := s.chatID
 	s.mu.RUnlock()
 	if botToken == "" {
 		return
 	}
 
-	buildBody := func(btn map[string]any) ([]byte, error) {
-		return json.Marshal(map[string]any{"menu_button": btn})
+	// 菜单按钮同样分作用域：不带 chat_id 是全局默认，带 chat_id 是某个会话专属。
+	// 若旧程序在「会话专属」作用域设过菜单按钮，全局默认会被它遮蔽，
+	// 故这里全局默认与私聊专属各设一次（0 表示全局默认）。
+	targets := []int64{0}
+	if id, err := strconv.ParseInt(strings.TrimSpace(chatID), 10, 64); err == nil && id > 0 {
+		targets = append(targets, id)
+	}
+	for _, chat := range targets {
+		s.applyMenuButton(botToken, panelURL, chat)
+	}
+}
+
+// applyMenuButton 在指定作用域（chatID=0 表示全局默认）应用菜单按钮。
+//
+// web_app 优先；失败（最常见是该域名未在 BotFather 注册为 Web App）时降级为
+// commands 类型，保证按钮始终可用、不会因一次失败而静默卡死。
+func (s *TelegramService) applyMenuButton(botToken, panelURL string, chatID int64) {
+	buildBody := func(btn map[string]any) []byte {
+		payload := map[string]any{"menu_button": btn}
+		if chatID != 0 {
+			payload["chat_id"] = chatID
+		}
+		b, _ := json.Marshal(payload)
+		return b
 	}
 
 	// 1) 优先 web_app：点击直接打开面板。
 	if panelURL != "" {
-		webAppBtn, _ := buildBody(map[string]any{
+		webAppBtn := buildBody(map[string]any{
 			"type":    "web_app",
 			"text":    "OCI 面板",
 			"web_app": map[string]string{"url": panelURL},
 		})
 		if s.postMenuButton(botToken, webAppBtn) {
-			log.Printf("Telegram 菜单按钮已设为 Web App（打开面板：%s）", panelURL)
+			log.Printf("Telegram 菜单按钮已设为 Web App（chat=%d，打开面板：%s）", chatID, panelURL)
 			return
 		}
-		log.Printf("Telegram 菜单按钮 web_app 设置失败（域名可能未在 BotFather 注册为 Web App），降级为 commands 类型")
+		log.Printf("Telegram 菜单按钮 web_app 设置失败（域名可能未在 BotFather 注册为 Web App），降级为 commands 类型（chat=%d）", chatID)
 	}
 
 	// 2) 降级 / 默认：commands 类型，点击显示命令列表。
-	cmdBtn, _ := buildBody(map[string]any{"type": "commands"})
+	cmdBtn := buildBody(map[string]any{"type": "commands"})
 	if s.postMenuButton(botToken, cmdBtn) {
-		log.Printf("Telegram 菜单按钮已设为 commands 类型")
+		log.Printf("Telegram 菜单按钮已设为 commands 类型（chat=%d）", chatID)
 		return
 	}
-	log.Printf("Telegram 菜单按钮设置失败：commands 降级也失败")
+	log.Printf("Telegram 菜单按钮设置失败：commands 降级也失败（chat=%d）", chatID)
 }
 
 // postMenuButton 向 setChatMenuButton 发送一次性请求，返回是否成功（ok=true）。
