@@ -3,6 +3,8 @@ package services
 import (
 	"context"
 	"fmt"
+	"log"
+	"sort"
 	"time"
 
 	"github.com/adiecho/oci-panel/internal/models"
@@ -14,7 +16,7 @@ import (
 func (s *OCIService) GetTrafficData(ctx context.Context, user *models.OciUser, vnicId string, startTime string, endTime string) (*models.TrafficData, error) {
 	monitoringClient, err := s.GetMonitoringClient(user)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("创建监控客户端失败: %w", err)
 	}
 
 	trafficData := &models.TrafficData{
@@ -23,14 +25,19 @@ func (s *OCIService) GetTrafficData(ctx context.Context, user *models.OciUser, v
 		Outbound: []string{},
 	}
 
-	// 构建查询 - 入站流量
-	// 注意：按 VNIC 维度查流量必须使用 oci_vcn 命名空间（resourceId = VNIC OCID）。
+	// 按 VNIC 维度查流量必须使用 oci_vcn 命名空间（resourceId = VNIC OCID）。
 	// oci_computeagent 的 NetworksBytesIn/Out 的 resourceId 是「实例 OCID」且为全 VNIC 聚合，
 	// 用 VNIC ID 过滤会查不到任何数据流（表现为“无数据”）。
-	inboundQuery := fmt.Sprintf("VnicFromNetworkBytes[1m]{resourceId = \"%s\"}.mean()", vnicId)
-	outboundQuery := fmt.Sprintf("VnicToNetworkBytes[1m]{resourceId = \"%s\"}.mean()", vnicId)
+	// 这里用 .sum() 聚合该时段字节数（与 OCI 控制台 VNIC 默认统计一致），分辨率 1 分钟。
+	inboundQuery := fmt.Sprintf("VnicFromNetworkBytes[1m]{resourceId = \"%s\"}.sum()", vnicId)
+	outboundQuery := fmt.Sprintf("VnicToNetworkBytes[1m]{resourceId = \"%s\"}.sum()", vnicId)
 
 	compartmentId := user.OciTenantID
+	start := parseTime(startTime)
+	end := parseTime(endTime)
+
+	// 记录查询要素，便于排查「无数据」问题（真实 OCI 报错会随函数返回，不再被吞掉）。
+	log.Printf("[流量查询] vnicId=%s compartment=%s start=%s end=%s", vnicId, compartmentId, start.Format(time.RFC3339), end.Format(time.RFC3339))
 
 	// 获取入站数据
 	inReq := monitoring.SummarizeMetricsDataRequest{
@@ -38,23 +45,13 @@ func (s *OCIService) GetTrafficData(ctx context.Context, user *models.OciUser, v
 		SummarizeMetricsDataDetails: monitoring.SummarizeMetricsDataDetails{
 			Namespace: stringPtr("oci_vcn"),
 			Query:     &inboundQuery,
-			StartTime: &common.SDKTime{Time: parseTime(startTime)},
-			EndTime:   &common.SDKTime{Time: parseTime(endTime)},
+			StartTime: &common.SDKTime{Time: start},
+			EndTime:   &common.SDKTime{Time: end},
 		},
 	}
-
 	inResp, err := monitoringClient.SummarizeMetricsData(ctx, inReq)
-	if err == nil {
-		for _, item := range inResp.Items {
-			for _, dp := range item.AggregatedDatapoints {
-				if dp.Timestamp != nil {
-					trafficData.Time = append(trafficData.Time, dp.Timestamp.Format("15:04"))
-				}
-				if dp.Value != nil {
-					trafficData.Inbound = append(trafficData.Inbound, fmt.Sprintf("%.2f", *dp.Value/1024/1024))
-				}
-			}
-		}
+	if err != nil {
+		return nil, fmt.Errorf("入站流量查询失败(vnic=%s): %w", vnicId, err)
 	}
 
 	// 获取出站数据
@@ -63,20 +60,51 @@ func (s *OCIService) GetTrafficData(ctx context.Context, user *models.OciUser, v
 		SummarizeMetricsDataDetails: monitoring.SummarizeMetricsDataDetails{
 			Namespace: stringPtr("oci_vcn"),
 			Query:     &outboundQuery,
-			StartTime: &common.SDKTime{Time: parseTime(startTime)},
-			EndTime:   &common.SDKTime{Time: parseTime(endTime)},
+			StartTime: &common.SDKTime{Time: start},
+			EndTime:   &common.SDKTime{Time: end},
 		},
 	}
-
 	outResp, err := monitoringClient.SummarizeMetricsData(ctx, outReq)
-	if err == nil {
-		for _, item := range outResp.Items {
-			for _, dp := range item.AggregatedDatapoints {
-				if dp.Value != nil {
-					trafficData.Outbound = append(trafficData.Outbound, fmt.Sprintf("%.2f", *dp.Value/1024/1024))
-				}
+	if err != nil {
+		return nil, fmt.Errorf("出站流量查询失败(vnic=%s): %w", vnicId, err)
+	}
+
+	// 入站/出站数据点可能数量不同（某一方向无流量时为空），按时间戳对齐到同一时间轴。
+	inboundMap := map[string]string{}
+	outboundMap := map[string]string{}
+	timeSet := map[string]bool{}
+
+	for _, item := range inResp.Items {
+		for _, dp := range item.AggregatedDatapoints {
+			if dp.Timestamp == nil || dp.Value == nil {
+				continue
 			}
+			t := dp.Timestamp.Format("15:04")
+			inboundMap[t] = fmt.Sprintf("%.2f", *dp.Value/1024/1024)
+			timeSet[t] = true
 		}
+	}
+	for _, item := range outResp.Items {
+		for _, dp := range item.AggregatedDatapoints {
+			if dp.Timestamp == nil || dp.Value == nil {
+				continue
+			}
+			t := dp.Timestamp.Format("15:04")
+			outboundMap[t] = fmt.Sprintf("%.2f", *dp.Value/1024/1024)
+			timeSet[t] = true
+		}
+	}
+
+	times := make([]string, 0, len(timeSet))
+	for t := range timeSet {
+		times = append(times, t)
+	}
+	sort.Strings(times) // 15:04 字典序即时间序（同一日内）
+
+	trafficData.Time = times
+	for _, t := range times {
+		trafficData.Inbound = append(trafficData.Inbound, inboundMap[t])
+		trafficData.Outbound = append(trafficData.Outbound, outboundMap[t])
 	}
 
 	return trafficData, nil

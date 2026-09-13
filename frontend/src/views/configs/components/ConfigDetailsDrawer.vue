@@ -231,6 +231,9 @@ const loadTrafficData = async () => {
       endTime: toUtcIso(trafficForm.value.endTime)
     })
     tabTraffic.value = response.data || { time: [], inbound: [], outbound: [] }
+    if (!tabTraffic.value.time || tabTraffic.value.time.length === 0) {
+      toast.info('查询成功，但该时间段内所选 VNIC 无流量监控数据（可能该时段确实无流量）')
+    }
   } catch (error: any) {
     toast.error(error.message || '加载流量数据失败')
     tabTraffic.value = { time: [], inbound: [], outbound: [] }

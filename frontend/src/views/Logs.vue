@@ -55,6 +55,32 @@ const clearReconnect = () => {
   }
 }
 
+// appendServerLine 处理服务端推送的日志行。服务端历史回放/实时日志已是
+// 「[时间] LEVEL: 内容」格式，识别后不再重复加本地时间戳，并据 LEVEL 着色。
+const appendServerLine = (raw: string) => {
+  const m = raw.match(/^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]\s*\[(INFO|WARN|ERROR|DEBUG|SUCCESS)\]\s*(.*)$/)
+  if (m) {
+    const typeMap: Record<string, LogEntry['type']> = {
+      INFO: 'info',
+      WARN: 'warning',
+      ERROR: 'error',
+      DEBUG: 'info',
+      SUCCESS: 'success'
+    }
+    logs.value.push({ message: raw, type: typeMap[m[2]] ?? 'info' })
+  } else {
+    logs.value.push({ message: raw, type: 'info' })
+  }
+  if (logs.value.length > MAX_LOG_ENTRIES) {
+    logs.value.splice(0, logs.value.length - MAX_LOG_ENTRIES)
+  }
+  nextTick(() => {
+    if (logConsole.value) {
+      logConsole.value.scrollTop = logConsole.value.scrollHeight
+    }
+  })
+}
+
 const scheduleReconnect = () => {
   if (disposed || manualClose || retries >= MAX_RETRIES) {
     if (retries >= MAX_RETRIES) {
@@ -99,7 +125,7 @@ const connectWebSocket = async () => {
 
     socket.onmessage = event => {
       if (seq !== socketSeq || ws.value !== socket) return
-      addLog(event.data, 'info')
+      appendServerLine(event.data)
     }
 
     socket.onerror = () => {

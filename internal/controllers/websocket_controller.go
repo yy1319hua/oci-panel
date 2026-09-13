@@ -129,6 +129,12 @@ func (wc *WebSocketController) HandleWebSocket(c *gin.Context) {
 
 	wc.wsService.SendInfo("Connected to log stream")
 
+	// 回放历史日志：把服务端已缓冲的最近日志先发给新连接，
+	// 这样进入页面或重连后能看到「连接前」的历史，而不只是连接后的实时日志。
+	for _, line := range wc.wsService.GetHistory() {
+		_ = conn.WriteMessage(websocket.TextMessage, []byte(line))
+	}
+
 	for {
 		_, _, err := conn.ReadMessage()
 		if err != nil {

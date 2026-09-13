@@ -13,10 +13,12 @@ import (
 )
 
 type WebSocketService struct {
-	clients   map[*websocket.Conn]bool
-	broadcast chan []byte
-	tickets   map[string]webSocketTicket
-	mu        sync.RWMutex
+	clients    map[*websocket.Conn]bool
+	broadcast  chan []byte
+	tickets    map[string]webSocketTicket
+	mu         sync.RWMutex
+	history    []string // 环形缓冲：保存最近 N 条日志，供新连接回放历史
+	historyMax int
 }
 
 const (
@@ -32,9 +34,11 @@ type webSocketTicket struct {
 
 func NewWebSocketService() *WebSocketService {
 	ws := &WebSocketService{
-		clients:   make(map[*websocket.Conn]bool),
-		broadcast: make(chan []byte, 256),
-		tickets:   make(map[string]webSocketTicket),
+		clients:    make(map[*websocket.Conn]bool),
+		broadcast:  make(chan []byte, 256),
+		tickets:    make(map[string]webSocketTicket),
+		history:    make([]string, 0, 512),
+		historyMax: 2000,
 	}
 	go ws.run()
 	return ws
@@ -131,7 +135,27 @@ func (ws *WebSocketService) BroadcastMessage(message []byte) {
 
 func (ws *WebSocketService) SendLog(level string, message string) {
 	logMsg := fmt.Sprintf("[%s] %s: %s", time.Now().Format("2006-01-02 15:04:05"), level, message)
+	ws.appendHistory(logMsg)
 	ws.BroadcastMessage([]byte(logMsg))
+}
+
+// appendHistory 把一行日志写入历史环形缓冲（受写锁保护，供 GetHistory 回放）。
+func (ws *WebSocketService) appendHistory(line string) {
+	ws.mu.Lock()
+	defer ws.mu.Unlock()
+	ws.history = append(ws.history, line)
+	if len(ws.history) > ws.historyMax {
+		ws.history = ws.history[len(ws.history)-ws.historyMax:]
+	}
+}
+
+// GetHistory 返回历史日志的快照副本（供新连接回放连接前的历史日志）。
+func (ws *WebSocketService) GetHistory() []string {
+	ws.mu.RLock()
+	defer ws.mu.RUnlock()
+	out := make([]string, len(ws.history))
+	copy(out, ws.history)
+	return out
 }
 
 func (ws *WebSocketService) SendInfo(message string) {
