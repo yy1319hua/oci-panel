@@ -12,7 +12,6 @@ export type {
   WebSocketTicket,
   AuthStatus,
   MfaSecret,
-  Glance,
   RecentLogs
 } from './sys'
 
@@ -37,7 +36,6 @@ export type {
   VolumeInfo,
   VCNInfo,
   TenantInfo,
-  ImageInfo,
   TrafficCondition,
   TrafficData,
   InstanceTrafficStat,

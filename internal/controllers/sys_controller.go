@@ -250,21 +250,6 @@ func (sc *SysController) Login(c *gin.Context) {
 	}, "Login successful"))
 }
 
-type GlanceResponse struct {
-	TotalConfigs int64 `json:"totalConfigs"`
-}
-
-func (sc *SysController) GetGlance(c *gin.Context) {
-	db := database.GetDB()
-
-	var totalConfigs int64
-	db.Model(&models.OciUser{}).Count(&totalConfigs)
-
-	c.JSON(http.StatusOK, models.SuccessResponse(GlanceResponse{
-		TotalConfigs: totalConfigs,
-	}, "success"))
-}
-
 // VersionResponse 是 /api/sys/getVersion 的返回体，版本号来自统一常量。
 type VersionResponse struct {
 	Version string `json:"version"`

@@ -61,10 +61,10 @@ func TestSendLogNeverBlocksOnStalledBroadcast(t *testing.T) {
 // （历史缓冲改由广播 goroutine 维护）。
 func TestSendLogDoesNotTouchHistoryBuffer(t *testing.T) {
 	ws := &WebSocketService{
-		clients:   make(map[*websocket.Conn]bool),
-		broadcast: make(chan []byte, 64),
-		tickets:   make(map[string]webSocketTicket),
-		history:   make([]string, 0, 8),
+		clients:    make(map[*websocket.Conn]bool),
+		broadcast:  make(chan []byte, 64),
+		tickets:    make(map[string]webSocketTicket),
+		history:    make([]string, 0, 8),
 		historyMax: 8,
 	}
 	ws.SendLog("INFO", "line-1")

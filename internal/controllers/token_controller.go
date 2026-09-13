@@ -24,7 +24,7 @@ type CreateTokenRequest struct {
 
 type CreateTokenResponse struct {
 	// Token 是明文令牌，仅在此接口的返回中出现一次，请立即保存。
-	Token string `json:"token"`
+	Token string          `json:"token"`
 	Info  models.ApiToken `json:"info"`
 }
 
@@ -91,19 +91,4 @@ func (tc *TokenController) ListTokenCalls(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, models.SuccessResponse(calls, "success"))
-}
-
-// RevokeTokenByID 支持以路径参数形式吊销，便于 curl 直接调用。
-func (tc *TokenController) RevokeTokenByID(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := strconv.ParseUint(idStr, 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, models.ErrorResponse(400, "invalid id"))
-		return
-	}
-	if err := services.RevokeApiToken(uint(id)); err != nil {
-		c.JSON(http.StatusInternalServerError, models.ErrorResponse(500, err.Error()))
-		return
-	}
-	c.JSON(http.StatusOK, models.SuccessResponse(nil, "令牌已吊销"))
 }

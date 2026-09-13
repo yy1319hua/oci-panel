@@ -39,7 +39,6 @@ func Setup(r *gin.Engine, cfg *config.Config) *Services {
 
 	ociService := services.NewOCIService(cfg)
 	instanceService := services.NewInstanceService(ociService)
-	ipService := services.NewIpService(ociService)
 	wsService := services.NewWebSocketService()
 	schedulerService := services.NewSchedulerService(ociService)
 	telegramService := services.NewTelegramService(ociService)
@@ -63,26 +62,25 @@ func Setup(r *gin.Engine, cfg *config.Config) *Services {
 		sysCtrl := controllers.NewSysController(cfg, schedulerService)
 		sys := api.Group("/sys")
 		{
-		sys.POST("/login", sysCtrl.Login)
-		sys.POST("/checkMfaCode", sysCtrl.CheckMfaCode)
-		sys.POST("/requestPasswordReset", sysCtrl.RequestPasswordReset)
-		sys.POST("/resetPassword", sysCtrl.ResetPassword)
-		sys.POST("/wsTicket", wsCtrl.IssueTicket)
-		sys.GET("/getGlance", sysCtrl.GetGlance)
-		sys.GET("/recentLogs", wsCtrl.GetRecentLogs)
-		sys.GET("/getVersion", sysCtrl.GetVersion)
-		sys.GET("/getSysCfg", sysCtrl.GetSysCfg)
-		sys.POST("/updateCacheCfg", sysCtrl.UpdateCacheCfg)
-		sys.POST("/refreshCache", sysCtrl.RefreshCache)
-		sys.GET("/getAuthStatus", sysCtrl.GetAuthStatus)
-		sys.POST("/generateMfaSecret", sysCtrl.GenerateMfaSecret)
-		sys.POST("/enableMfa", sysCtrl.EnableMfa)
-		sys.POST("/disableMfa", sysCtrl.DisableMfa)
-		sys.GET("/getProfile", sysCtrl.GetProfile)
-		sys.POST("/changePassword", sysCtrl.ChangePassword)
-		sys.POST("/updateEmail", sysCtrl.UpdateEmail)
-		sys.POST("/updateLogLevel", sysCtrl.UpdateLogLevel)
-		sys.POST("/updateAccount", sysCtrl.UpdateAccount)
+			sys.POST("/login", sysCtrl.Login)
+			sys.POST("/checkMfaCode", sysCtrl.CheckMfaCode)
+			sys.POST("/requestPasswordReset", sysCtrl.RequestPasswordReset)
+			sys.POST("/resetPassword", sysCtrl.ResetPassword)
+			sys.POST("/wsTicket", wsCtrl.IssueTicket)
+			sys.GET("/recentLogs", wsCtrl.GetRecentLogs)
+			sys.GET("/getVersion", sysCtrl.GetVersion)
+			sys.GET("/getSysCfg", sysCtrl.GetSysCfg)
+			sys.POST("/updateCacheCfg", sysCtrl.UpdateCacheCfg)
+			sys.POST("/refreshCache", sysCtrl.RefreshCache)
+			sys.GET("/getAuthStatus", sysCtrl.GetAuthStatus)
+			sys.POST("/generateMfaSecret", sysCtrl.GenerateMfaSecret)
+			sys.POST("/enableMfa", sysCtrl.EnableMfa)
+			sys.POST("/disableMfa", sysCtrl.DisableMfa)
+			sys.GET("/getProfile", sysCtrl.GetProfile)
+			sys.POST("/changePassword", sysCtrl.ChangePassword)
+			sys.POST("/updateEmail", sysCtrl.UpdateEmail)
+			sys.POST("/updateLogLevel", sysCtrl.UpdateLogLevel)
+			sys.POST("/updateAccount", sysCtrl.UpdateAccount)
 		}
 
 		passkeyCtrl := controllers.NewPasskeyController(cfg)
@@ -108,7 +106,6 @@ func Setup(r *gin.Engine, cfg *config.Config) *Services {
 			oci.POST("/details/instances", ociCtrl.GetConfigInstances)
 			oci.POST("/details/volumes", ociCtrl.GetConfigVolumes)
 			oci.POST("/details/vcns", ociCtrl.GetConfigVCNs)
-			oci.POST("/details/clearCache", ociCtrl.ClearConfigCache)
 			oci.POST("/tenant/info", ociCtrl.GetTenantInfo)
 			oci.POST("/tenant/updatePwdEx", ociCtrl.UpdatePasswordExpiry)
 			oci.POST("/tenant/updateUserInfo", ociCtrl.UpdateUserInfo)
@@ -127,7 +124,6 @@ func Setup(r *gin.Engine, cfg *config.Config) *Services {
 			oci.POST("/vcn/deleteSecurityRule", ociCtrl.DeleteSecurityRule)
 			oci.POST("/vcn/releaseSecurityRules", ociCtrl.ReleaseSecurityRules)
 			oci.POST("/vcn/delete", ociCtrl.DeleteVcn)
-			oci.POST("/images", ociCtrl.ListImages)
 		}
 
 		instanceCtrl := controllers.NewInstanceController(instanceService, wsService)
@@ -145,7 +141,6 @@ func Setup(r *gin.Engine, cfg *config.Config) *Services {
 			instance.POST("/createCloudShell", instanceCtrl.CreateCloudShell)
 			instance.POST("/attachIPv6", instanceCtrl.AttachIPv6)
 			instance.POST("/autoRescue", instanceCtrl.AutoRescue)
-			instance.POST("/check500MbpsSupport", instanceCtrl.Check500MbpsSupport)
 			instance.POST("/enable500Mbps", instanceCtrl.Enable500Mbps)
 			instance.POST("/disable500Mbps", instanceCtrl.Disable500Mbps)
 		}
@@ -153,13 +148,6 @@ func Setup(r *gin.Engine, cfg *config.Config) *Services {
 		bootVolume := api.Group("/bootVolume")
 		{
 			bootVolume.POST("/update", instanceCtrl.UpdateBootVolumeById)
-		}
-
-		ipCtrl := controllers.NewIpController(ipService)
-		ip := api.Group("/ip")
-		{
-			ip.POST("/change", ipCtrl.ChangePublicIp)
-			ip.POST("/attachIpv6", ipCtrl.AttachIpv6)
 		}
 
 		telegramCtrl := controllers.NewTelegramController(telegramService)
@@ -171,7 +159,6 @@ func Setup(r *gin.Engine, cfg *config.Config) *Services {
 			telegram.POST("/sendTestMessage", telegramCtrl.SendTestMessage)
 			telegram.POST("/startBot", telegramCtrl.StartBot)
 			telegram.POST("/stopBot", telegramCtrl.StopBot)
-			telegram.GET("/status", telegramCtrl.GetBotStatus)
 		}
 
 		botCtrl := controllers.NewBotController(instanceService)
@@ -189,7 +176,6 @@ func Setup(r *gin.Engine, cfg *config.Config) *Services {
 			token.GET("/list", tokenCtrl.ListTokens)
 			token.GET("/calls", tokenCtrl.ListTokenCalls)
 			token.POST("/revoke", tokenCtrl.RevokeToken)
-			token.DELETE("/:id", tokenCtrl.RevokeTokenByID)
 		}
 	}
 

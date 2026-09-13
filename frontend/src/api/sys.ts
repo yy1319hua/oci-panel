@@ -40,12 +40,6 @@ export interface MfaSecret {
   qrCode: string
 }
 
-/** 概览统计。 */
-export interface Glance {
-  totalConfigs: number
-  totalTasks: number
-}
-
 /** 版本信息（统一数据源，后端返回固定常量）。 */
 export interface VersionResponse {
   version: string
@@ -79,7 +73,6 @@ export const sysApi = {
   updateEmail: (req: { email: string }) => post('/sys/updateEmail', req),
   updateLogLevel: (level: string) => post('/sys/updateLogLevel', { level }),
   updateAccount: (account: string) => post<{ token: string; account: string }>('/sys/updateAccount', { account }),
-  getGlance: () => get<Glance>('/sys/getGlance'),
   /**
    * 拉取服务端缓冲的历史日志。日志页首屏用它立即渲染，
    * 不必等 WebSocket 建连完成（后者要经历取 ticket → 升级 → 回放三步）。

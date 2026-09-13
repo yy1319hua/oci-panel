@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 
 	"github.com/adiecho/oci-panel/internal/models"
-	"github.com/adiecho/oci-panel/internal/util"
 	"github.com/gin-gonic/gin"
 )
 
@@ -178,20 +177,6 @@ func (oc *OciController) GetConfigVCNs(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, models.SuccessResponse(vcns, "Success"))
-}
-
-// ClearConfigCache 刷新配置的缓存
-func (oc *OciController) ClearConfigCache(c *gin.Context) {
-	var req GetConfigDetailsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, models.ErrorResponse(400, err.Error()))
-		return
-	}
-
-	// 重新获取并更新缓存
-	util.Go("UpdateConfigCache", func() { oc.schedulerService.UpdateConfigCache(req.ConfigID) })
-
-	c.JSON(http.StatusOK, models.SuccessResponse(nil, "Cache refresh started"))
 }
 
 // GetTenantInfo 获取租户详情

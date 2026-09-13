@@ -122,13 +122,3 @@ func (tc *TelegramController) StopBot(c *gin.Context) {
 	tc.telegramService.StopBot()
 	c.JSON(http.StatusOK, models.SuccessResponse(nil, "Bot 已停止"))
 }
-
-type BotStatusResponse struct {
-	Running bool `json:"running"`
-}
-
-func (tc *TelegramController) GetBotStatus(c *gin.Context) {
-	c.JSON(http.StatusOK, models.SuccessResponse(BotStatusResponse{
-		Running: tc.telegramService.IsRunning(),
-	}, "success"))
-}

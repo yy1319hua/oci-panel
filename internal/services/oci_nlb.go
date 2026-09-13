@@ -42,19 +42,6 @@ func isManagedNlbForInstance(freeformTags map[string]string, instanceID string) 
 	return freeformTags[nlbInstanceTagKey] == instanceID && instanceID != ""
 }
 
-// Check500MbpsSupport 检查实例是否支持500Mbps功能
-// 仅 VM.Standard.E2.1.Micro (AMD) 实例支持此功能
-func (s *OCIService) Check500MbpsSupport(user *models.OciUser, instanceID string) (bool, string, error) {
-	instance, err := s.GetInstanceById(user, instanceID)
-	if err != nil {
-		return false, "", fmt.Errorf("failed to get instance: %w", err)
-	}
-
-	shape := *instance.Shape
-	supported := strings.Contains(shape, "E2.1.Micro")
-	return supported, shape, nil
-}
-
 // Enable500Mbps 一键开启下行500Mbps
 func (s *OCIService) Enable500Mbps(user *models.OciUser, instanceID string, sshPort int) (string, error) {
 	ctx := context.Background()

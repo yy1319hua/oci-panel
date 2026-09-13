@@ -97,7 +97,6 @@ const groups: ApiGroup[] = [
     icon: Terminal,
     desc: '系统状态与缓存',
     endpoints: [
-      { method: 'GET', path: '/api/sys/getGlance', desc: '总览统计（配置数 / 任务数）', auth: 'token' },
       { method: 'GET', path: '/api/sys/getSysCfg', desc: '系统配置', auth: 'token' },
       { method: 'POST', path: '/api/sys/refreshCache', desc: '手动刷新缓存', auth: 'token' }
     ]

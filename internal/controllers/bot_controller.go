@@ -29,12 +29,12 @@ type BotInstance struct {
 
 // BotConfigSummary 是单个 OCI 配置（租户）的紧凑摘要。
 type BotConfigSummary struct {
-	ID             string        `json:"id"`
-	Username       string        `json:"username"`
-	Region         string        `json:"region"`
-	InstanceCount  int           `json:"instanceCount"`
-	RunningCount   int           `json:"runningCount"`
-	Instances      []BotInstance `json:"instances"`
+	ID            string        `json:"id"`
+	Username      string        `json:"username"`
+	Region        string        `json:"region"`
+	InstanceCount int           `json:"instanceCount"`
+	RunningCount  int           `json:"runningCount"`
+	Instances     []BotInstance `json:"instances"`
 }
 
 // BotSummaryResponse 是 /api/bot/summary 的完整响应，便于机器人直接消费。

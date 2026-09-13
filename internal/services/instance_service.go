@@ -259,14 +259,3 @@ func (s *InstanceService) Disable500Mbps(userId string, instanceId string, retai
 
 	return s.ociService.Disable500Mbps(&user, instanceId, retainNatGw, retainNlb)
 }
-
-// Check500MbpsSupport 检查实例是否支持500Mbps功能
-// 仅 VM.Standard.E2.1.Micro (AMD) 实例支持此功能
-func (s *InstanceService) Check500MbpsSupport(userId string, instanceId string) (bool, string, error) {
-	var user models.OciUser
-	if err := database.GetDB().Where("id = ?", userId).First(&user).Error; err != nil {
-		return false, "", fmt.Errorf("user not found: %w", err)
-	}
-
-	return s.ociService.Check500MbpsSupport(&user, instanceId)
-}

@@ -370,37 +370,3 @@ func (ic *InstanceController) Disable500Mbps(c *gin.Context) {
 		"warning": "关闭后NAT网关和网络负载均衡器将被删除，实例将失去公网访问能力，需要重新分配公网IP。",
 	}, "500Mbps关闭任务已启动，正在清理NAT网关和网络负载均衡器，请稍候..."))
 }
-
-// Check500MbpsSupport 检查实例是否支持500Mbps功能
-// 仅 VM.Standard.E2.1.Micro (AMD) 实例支持此功能
-type Check500MbpsSupportRequest struct {
-	UserId     string `json:"userId" binding:"required"`
-	InstanceId string `json:"instanceId" binding:"required"`
-}
-
-func (ic *InstanceController) Check500MbpsSupport(c *gin.Context) {
-	var req Check500MbpsSupportRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, models.ErrorResponse(400, err.Error()))
-		return
-	}
-
-	supported, shape, err := ic.instanceService.Check500MbpsSupport(req.UserId, req.InstanceId)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, models.ErrorResponse(500, err.Error()))
-		return
-	}
-
-	c.JSON(http.StatusOK, models.SuccessResponse(map[string]interface{}{
-		"supported": supported,
-		"shape":     shape,
-		"message":   getShapeSupportMessage(supported),
-	}, "检查完成"))
-}
-
-func getShapeSupportMessage(supported bool) string {
-	if supported {
-		return "此实例支持一键开启/关闭下行500Mbps功能"
-	}
-	return "此实例不支持500Mbps功能，仅 VM.Standard.E2.1.Micro 实例支持此功能"
-}

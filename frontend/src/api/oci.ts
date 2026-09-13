@@ -63,13 +63,6 @@ export interface TenantInfo {
   [key: string]: unknown
 }
 
-/** 可用镜像。 */
-export interface ImageInfo {
-  id: string
-  operatingSystem: string
-  operatingSystemVersion: string
-}
-
 /** 流量查询条件。 */
 export interface TrafficCondition {
   regions?: ValueLabel[]
@@ -206,8 +199,6 @@ export const ociApi = {
   deleteMfaDevice: (req: { ociCfgId: string; userId: string }) => post('/oci/tenant/deleteMfaDevice', req),
   deleteApiKey: (req: { ociCfgId: string; userId: string }) => post('/oci/tenant/deleteApiKey', req),
   deleteUser: (req: { ociCfgId: string; userId: string }) => post('/oci/tenant/deleteUser', req),
-
-  images: (req: { configId: string; region: string; architecture: string }) => post<ImageInfo[]>('/oci/images', req),
 
   trafficCondition: (configId: string) => get<TrafficCondition>('/oci/traffic/condition', { params: { configId } }),
   trafficVnics: (req: { configId: string; instanceId: string }) =>
