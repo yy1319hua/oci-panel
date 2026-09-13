@@ -34,6 +34,7 @@ type TelegramService struct {
 	chatID     string
 	enabled    bool
 	apiBase    string
+	panelURL   string // 面板对外地址（config.toml 的 email.public_url），用于菜单按钮打开 Web App
 	ociService *OCIService
 	mu         sync.RWMutex
 	stopChan   chan struct{}
@@ -96,9 +97,10 @@ type InlineKeyboardMarkup struct {
 	InlineKeyboard [][]InlineKeyboardButton `json:"inline_keyboard"`
 }
 
-func NewTelegramService(ociService *OCIService) *TelegramService {
+func NewTelegramService(ociService *OCIService, panelURL string) *TelegramService {
 	ts := &TelegramService{
 		ociService: ociService,
+		panelURL:   strings.TrimSpace(panelURL),
 		stopChan:   make(chan struct{}),
 	}
 	ts.loadConfig()
@@ -147,11 +149,14 @@ func (s *TelegramService) UpdateConfig(botToken, chatID string, enabled bool, ap
 
 	if enabled && botToken != "" && chatID != "" {
 		s.StartBot()
-		// StartBot 在「已在运行」时会提前返回，此时它内部的 setMyCommands 不会执行。
-		// 但配置可能刚换了 bot token 或反代地址 —— 这两者都会改变命令菜单的归属，
-		// 必须重新注册，否则用户在新 bot 上看到的仍是空菜单 / 旧菜单。
+		// StartBot 在「已在运行」时会提前返回，此时它内部的 setMyCommands / setMenuButton
+		// 不会执行。但配置可能刚换了 bot token 或反代地址 —— 这两者都会改变命令菜单
+		// 与菜单按钮的归属，必须重新注册，否则用户在新 bot 上看到的仍是空菜单 / 旧按钮。
 		// 该调用幂等且异步执行，不会拖慢配置保存。
-		go s.setMyCommands()
+		go func() {
+			s.setMyCommands()
+			s.setMenuButton()
+		}()
 	} else {
 		s.StopBot()
 	}
@@ -293,6 +298,7 @@ func (s *TelegramService) StartBot() {
 	s.mu.Unlock()
 
 	s.setMyCommands()
+	s.setMenuButton()
 	go s.pollUpdates()
 	log.Println("Telegram bot started")
 }
@@ -427,7 +433,7 @@ func (s *TelegramService) handleCommand(chatID int64, text string) {
 	case "/version":
 		reply = s.getVersionInfo()
 	default:
-		help = "可用命令：\n/traffic 流量统计\n/cost 每日成本\n/instances 实例统计\n/alive 一键测活\n/configs 配置列表\n/version 版本信息\n/menu 打开按钮菜单"
+		help = "可用命令：\n/start 开始 / 打开面板\n/traffic 流量统计\n/cost 每日成本\n/instances 实例统计\n/alive 一键测活\n/configs 配置列表\n/version 版本信息\n/menu 打开按钮菜单"
 	}
 
 	if reply == "" {
@@ -454,6 +460,7 @@ func (s *TelegramService) setMyCommands() {
 	}
 
 	commands := []map[string]string{
+		{"command": "start", "description": "开始 / 打开面板"},
 		{"command": "menu", "description": "打开按钮菜单"},
 		{"command": "traffic", "description": "流量统计（账号月度总量）"},
 		{"command": "cost", "description": "每日成本（发现扣费）"},
@@ -515,6 +522,85 @@ func (s *TelegramService) setMyCommands() {
 	}
 
 	log.Printf("setMyCommands 连续 %d 次失败，命令菜单可能仍为旧版本: %v", maxAttempts, lastErr)
+}
+
+// setMenuButton 配置 Telegram 聊天框右下角的「菜单按钮」（Menu Button）。
+//
+// 这是与 / 命令列表（setMyCommands）**完全独立**的机制：命令列表只在输入框输入 / 时
+// 浮现，而菜单按钮是常驻的一个入口，点击即触发。把它设成打开面板 Web App，用户无需
+// 翻命令就能一键进面板，体验远好于纯命令菜单。
+//
+// 行为：
+//   - 配置了面板对外地址（public_url）时，优先设为 web_app，点击直接打开面板；
+//   - 若 web_app 设置失败（最常见是该域名未在 BotFather 注册为 Web App，Telegram 返回
+//     "not registered as a Web App"），自动降级为 commands 类型（点击显示命令列表），
+//     保证按钮始终可用、且不会因一次失败而静默卡死；
+//   - 未配置 public_url 时，直接设为 commands 类型。
+//
+// Telegram 会缓存菜单按钮，故在「bot 启动」与「配置变更」两个时机都要调用，
+// 否则改了面板地址 / 换了 bot，用户看到的仍是旧按钮。
+func (s *TelegramService) setMenuButton() {
+	s.mu.RLock()
+	botToken := s.botToken
+	panelURL := s.panelURL
+	s.mu.RUnlock()
+	if botToken == "" {
+		return
+	}
+
+	buildBody := func(btn map[string]any) ([]byte, error) {
+		return json.Marshal(map[string]any{"menu_button": btn})
+	}
+
+	// 1) 优先 web_app：点击直接打开面板。
+	if panelURL != "" {
+		webAppBtn, _ := buildBody(map[string]any{
+			"type":    "web_app",
+			"text":    "OCI 面板",
+			"web_app": map[string]string{"url": panelURL},
+		})
+		if s.postMenuButton(botToken, webAppBtn) {
+			log.Printf("Telegram 菜单按钮已设为 Web App（打开面板：%s）", panelURL)
+			return
+		}
+		log.Printf("Telegram 菜单按钮 web_app 设置失败（域名可能未在 BotFather 注册为 Web App），降级为 commands 类型")
+	}
+
+	// 2) 降级 / 默认：commands 类型，点击显示命令列表。
+	cmdBtn, _ := buildBody(map[string]any{"type": "commands"})
+	if s.postMenuButton(botToken, cmdBtn) {
+		log.Printf("Telegram 菜单按钮已设为 commands 类型")
+		return
+	}
+	log.Printf("Telegram 菜单按钮设置失败：commands 降级也失败")
+}
+
+// postMenuButton 向 setChatMenuButton 发送一次性请求，返回是否成功（ok=true）。
+func (s *TelegramService) postMenuButton(botToken string, body []byte) bool {
+	apiURL := fmt.Sprintf("%s/bot%s/setChatMenuButton", s.baseURL(), botToken)
+	resp, err := http.Post(apiURL, "application/json", bytes.NewReader(body))
+	if err != nil {
+		log.Printf("setChatMenuButton 请求失败: %v", err)
+		return false
+	}
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("setChatMenuButton HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+		return false
+	}
+	var parsed struct {
+		Ok          bool   `json:"ok"`
+		Description string `json:"description"`
+	}
+	if err := json.Unmarshal(respBody, &parsed); err != nil {
+		return false
+	}
+	if !parsed.Ok {
+		log.Printf("setChatMenuButton 返回失败: %s", parsed.Description)
+		return false
+	}
+	return true
 }
 
 func (s *TelegramService) getMainKeyboard() *InlineKeyboardMarkup {

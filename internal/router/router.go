@@ -42,7 +42,7 @@ func Setup(r *gin.Engine, cfg *config.Config) *Services {
 	ipService := services.NewIpService(ociService)
 	wsService := services.NewWebSocketService()
 	schedulerService := services.NewSchedulerService(ociService)
-	telegramService := services.NewTelegramService(ociService)
+	telegramService := services.NewTelegramService(ociService, cfg.Email.PublicURL)
 
 	// 把「后端日志」与「API 访问日志」统一汇入实时日志页：
 	//  - logger.SetBroadcaster：所有 log.Print* / slog 输出实时推送到 WebSocket；

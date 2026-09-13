@@ -81,6 +81,18 @@ const groups: ApiGroup[] = [
     ]
   },
   {
+    name: '流量与成本',
+    icon: Cloud,
+    desc: '账号级月度流量、每日成本，以及单实例 VNIC 流量明细（成本依赖 USAGE_REPORT_READ 权限）',
+    endpoints: [
+      { method: 'POST', path: '/api/oci/traffic/monthly', desc: '账号月度流量（总流量 + 每实例明细 + 计费流量区分）', auth: 'token', body: '{"configId":"1","forceRefresh":false}' },
+      { method: 'POST', path: '/api/oci/traffic/cost', desc: '每日成本（近 N 天，默认 30；超时或权限不足会报错）', auth: 'token', body: '{"configId":"1","days":7}' },
+      { method: 'POST', path: '/api/oci/traffic/data', desc: '单实例 VNIC 流量明细（按时间区间查询）', auth: 'token', body: '{"configId":"1","instanceId":"ocid1.instance.oc1..","vnicId":"ocid1.vnic.oc1..","startTime":"2026-09-01T00:00:00Z","endTime":"2026-09-30T23:59:59Z"}' },
+      { method: 'GET', path: '/api/oci/traffic/condition', desc: '流量查询条件：区域与实例列表（query 参数）', auth: 'token', body: '?configId=1' },
+      { method: 'GET', path: '/api/oci/traffic/vnics', desc: '指定实例的 VNIC 列表（query 参数）', auth: 'token', body: '?configId=1&instanceId=ocid1.instance.oc1..' }
+    ]
+  },
+  {
     name: '系统',
     icon: Terminal,
     desc: '系统状态与缓存',
