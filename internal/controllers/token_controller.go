@@ -76,6 +76,23 @@ func (tc *TokenController) RevokeToken(c *gin.Context) {
 	c.JSON(http.StatusOK, models.SuccessResponse(nil, "令牌已吊销"))
 }
 
+// ListTokenCalls 返回指定令牌的最近调用记录（参考青龙面板的调用日志）。
+// 仅管理员 JWT 可调用（由 RequireAdmin 守卫），避免 API Token 窥探其它令牌的使用情况。
+func (tc *TokenController) ListTokenCalls(c *gin.Context) {
+	idStr := c.Query("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil || id == 0 {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse(400, "invalid id"))
+		return
+	}
+	calls, err := services.ListTokenCalls(uint(id))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse(500, err.Error()))
+		return
+	}
+	c.JSON(http.StatusOK, models.SuccessResponse(calls, "success"))
+}
+
 // RevokeTokenByID 支持以路径参数形式吊销，便于 curl 直接调用。
 func (tc *TokenController) RevokeTokenByID(c *gin.Context) {
 	idStr := c.Param("id")

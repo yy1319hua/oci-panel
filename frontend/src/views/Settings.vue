@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import {
   Info,
   Database,
@@ -30,7 +30,7 @@ import {
   Clock
 } from 'lucide-vue-next'
 import { sysApi, telegramApi, passkeyApi, tokenApi } from '@/api'
-import type { ApiToken, CreateTokenResult } from '@/api'
+import type { ApiToken, CreateTokenResult, TokenCallLog } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { createPasskeyCredential } from '@/lib/webauthn'
 import { toast } from '@/composables/useToast'
@@ -130,6 +130,36 @@ const createForm = ref({ name: '', expiresInDays: 0 })
 const newToken = ref<CreateTokenResult | null>(null)
 const copied = ref(false)
 const revokingId = ref<number | null>(null)
+
+// 调用记录（参考青龙面板）：按令牌查看最近的 API 调用明细
+const callsOpen = ref(false)
+const callsLoading = ref(false)
+const callsToken = ref<ApiToken | null>(null)
+const tokenCalls = ref<TokenCallLog[]>([])
+
+const openCalls = async (t: ApiToken) => {
+  callsToken.value = t
+  tokenCalls.value = []
+  callsOpen.value = true
+  callsLoading.value = true
+  try {
+    const response = await tokenApi.calls(t.id)
+    tokenCalls.value = response.data || []
+  } catch {
+    toast.error('加载调用记录失败')
+  } finally {
+    callsLoading.value = false
+  }
+}
+
+// 状态码着色：2xx 成功、4xx 警告、5xx 错误
+const statusClass = (code: number) =>
+  code >= 500 ? 'text-destructive' : code >= 400 ? 'text-warning' : 'text-success'
+
+// 按调用次数排序展示（调用多的令牌排前面更直观）
+const sortedTokens = computed(() =>
+  [...tokens.value].sort((a, b) => (b.callCount || 0) - (a.callCount || 0))
+)
 
 const loadTokens = async () => {
   tokensLoading.value = true
@@ -975,7 +1005,7 @@ const systemInfo = [
           </div>
           <div v-else class="divide-y divide-border/50">
             <div
-              v-for="t in tokens"
+              v-for="t in sortedTokens"
               :key="t.id"
               class="flex flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-3"
             >
@@ -983,24 +1013,35 @@ const systemInfo = [
                 <div class="flex items-center gap-2">
                   <span class="font-medium truncate">{{ t.name }}</span>
                   <Badge :variant="t.scope === 'full' ? 'success' : 'secondary'">{{ t.scope }}</Badge>
+                  <Badge variant="secondary" class="gap-1">
+                    <Activity class="w-3 h-3" />
+                    调用 {{ t.callCount || 0 }} 次
+                  </Badge>
                 </div>
                 <p class="text-xs text-muted-foreground mt-1 font-mono truncate">{{ t.prefix }}••••••••</p>
-                <p class="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                <p class="text-xs text-muted-foreground mt-1 flex items-center gap-1 flex-wrap">
                   <Clock class="w-3 h-3" />
-                  创建 {{ formatTime(t.createdAt) }} · 最近使用 {{ formatTime(t.lastUsedAt) }} · 过期
-                  {{ t.expiresAt ? formatTime(t.expiresAt) : '永不过期' }}
+                  创建 {{ formatTime(t.createdAt) }} · 最近使用 {{ formatTime(t.lastUsedAt) }}
+                  <template v-if="t.lastUsedIp"> · 来源 {{ t.lastUsedIp }}</template>
+                  · 过期 {{ t.expiresAt ? formatTime(t.expiresAt) : '永不过期' }}
                 </p>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                :disabled="revokingId === t.id"
-                @click="revokeToken(t.id)"
-              >
-                <Loader2 v-if="revokingId === t.id" class="w-4 h-4 animate-spin" />
-                <Trash2 v-else class="w-4 h-4" />
-                吊销
-              </Button>
+              <div class="flex items-center gap-2">
+                <Button variant="outline" size="sm" @click="openCalls(t)">
+                  <Activity class="w-4 h-4" />
+                  调用记录
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  :disabled="revokingId === t.id"
+                  @click="revokeToken(t.id)"
+                >
+                  <Loader2 v-if="revokingId === t.id" class="w-4 h-4 animate-spin" />
+                  <Trash2 v-else class="w-4 h-4" />
+                  吊销
+                </Button>
+              </div>
             </div>
           </div>
         </CardContent>
@@ -1144,6 +1185,57 @@ const systemInfo = [
             生成
           </Button>
           <Button v-else @click="createOpen = false">完成</Button>
+        </DialogFooter>
+      </Dialog>
+
+      <!-- 调用记录弹窗（参考青龙面板） -->
+      <Dialog v-model:open="callsOpen">
+        <DialogHeader>
+          <DialogTitle>调用记录</DialogTitle>
+          <DialogDescription>
+            令牌
+            <span class="text-primary font-medium">{{ callsToken?.name }}</span>
+            的最近 API 调用（最多保留 200 条）
+          </DialogDescription>
+        </DialogHeader>
+
+        <div class="mt-4 max-h-[60vh] overflow-y-auto">
+          <div v-if="callsLoading" class="text-center py-8">
+            <Loader2 class="w-8 h-8 mx-auto animate-spin text-primary" />
+          </div>
+          <div v-else-if="tokenCalls.length === 0" class="text-center py-8 text-muted-foreground text-sm">
+            暂无调用记录
+          </div>
+          <div v-else class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="text-left text-muted-foreground border-b border-border/50">
+                  <th class="py-2 pr-3 font-medium">时间</th>
+                  <th class="py-2 pr-3 font-medium">方法</th>
+                  <th class="py-2 pr-3 font-medium">路径</th>
+                  <th class="py-2 pr-3 font-medium">状态</th>
+                  <th class="py-2 font-medium">来源 IP</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="call in tokenCalls"
+                  :key="call.id"
+                  class="border-b border-border/30 last:border-0"
+                >
+                  <td class="py-2 pr-3 text-muted-foreground whitespace-nowrap">{{ formatTime(call.createdAt) }}</td>
+                  <td class="py-2 pr-3 font-mono">{{ call.method }}</td>
+                  <td class="py-2 pr-3 font-mono break-all">{{ call.path }}</td>
+                  <td class="py-2 pr-3 font-mono" :class="statusClass(call.statusCode)">{{ call.statusCode }}</td>
+                  <td class="py-2 font-mono text-muted-foreground">{{ call.ip || '—' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <DialogFooter class="mt-6">
+          <Button variant="outline" @click="callsOpen = false">关闭</Button>
         </DialogFooter>
       </Dialog>
     </div>

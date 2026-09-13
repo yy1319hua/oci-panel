@@ -55,10 +55,26 @@ func ListApiTokens() ([]models.ApiToken, error) {
 	return tokens, nil
 }
 
-// RevokeApiToken 按 ID 删除（吊销）一个令牌。
+// RevokeApiToken 按 ID 删除（吊销）一个令牌，同时清理其调用记录。
 func RevokeApiToken(id uint) error {
-	if err := database.GetDB().Delete(&models.ApiToken{}, id).Error; err != nil {
+	db := database.GetDB()
+	if err := db.Delete(&models.ApiToken{}, id).Error; err != nil {
 		return fmt.Errorf("failed to revoke token: %w", err)
 	}
+	// 顺带删除该令牌的调用记录，避免残留孤儿数据。
+	_ = db.Where("token_id = ?", id).Delete(&models.TokenCallLog{}).Error
 	return nil
+}
+
+// ListTokenCalls 返回指定令牌最近的调用记录（倒序，最多 200 条）。
+func ListTokenCalls(tokenID uint) ([]models.TokenCallLog, error) {
+	var calls []models.TokenCallLog
+	if err := database.GetDB().
+		Where("token_id = ?", tokenID).
+		Order("created_at desc").
+		Limit(200).
+		Find(&calls).Error; err != nil {
+		return nil, fmt.Errorf("failed to list token calls: %w", err)
+	}
+	return calls, nil
 }

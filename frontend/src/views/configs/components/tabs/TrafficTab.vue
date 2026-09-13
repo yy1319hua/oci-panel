@@ -23,6 +23,14 @@ defineProps<{
 defineEmits<{
   query: []
 }>()
+
+// 后端返回的数值单位是 MB；流量大时自动换算成 GB，避免出现一长串数字。
+const formatTraffic = (mb?: string) => {
+  const v = Number(mb)
+  if (!mb || isNaN(v)) return '0'
+  if (v >= 1024) return `${(v / 1024).toFixed(2)} GB`
+  return `${v.toFixed(2)} MB`
+}
 </script>
 
 <template>
@@ -87,21 +95,24 @@ defineEmits<{
       <Loader2 class="w-10 h-10 animate-spin text-primary" />
     </div>
     <Card v-else-if="traffic.time?.length" class="p-4">
-      <h4 class="font-semibold mb-4">流量数据 (单位: MB)</h4>
+      <div class="flex items-baseline justify-between mb-4">
+        <h4 class="font-semibold">流量数据</h4>
+        <span class="text-xs text-muted-foreground">聚合粒度按时间跨度自适应（大跨度自动变粗）</span>
+      </div>
       <div class="overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>时间</TableHead>
-              <TableHead class="text-success">入站 (MB)</TableHead>
-              <TableHead class="text-primary">出站 (MB)</TableHead>
+              <TableHead class="text-success">入站</TableHead>
+              <TableHead class="text-primary">出站</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             <TableRow v-for="(time, index) in traffic.time" :key="index">
               <TableCell class="text-muted-foreground">{{ time }}</TableCell>
-              <TableCell class="text-success">{{ traffic.inbound[index] || '0' }}</TableCell>
-              <TableCell class="text-primary">{{ traffic.outbound[index] || '0' }}</TableCell>
+              <TableCell class="text-success">{{ formatTraffic(traffic.inbound[index]) }}</TableCell>
+              <TableCell class="text-primary">{{ formatTraffic(traffic.outbound[index]) }}</TableCell>
             </TableRow>
           </TableBody>
         </Table>

@@ -13,6 +13,7 @@ import (
 	"github.com/adiecho/oci-panel/internal/models"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"gorm.io/gorm"
 )
 
 var jwtSecret []byte
@@ -171,7 +172,12 @@ func AuthMiddleware() gin.HandlerFunc {
 			c.Set("username", "api-token:"+tok.Name)
 			c.Set("authType", "apitoken")
 			c.Set("readOnly", tok.Scope == "readonly")
+			c.Set("apiTokenID", tok.ID)
+			// 记录本次调用（计次 / IP / 明细）：先暂存请求信息，待 handler 执行完
+			// （c.Next 返回、状态码确定）后再写入调用记录。
+			recordTokenCall(c, tok.ID)
 			c.Next()
+			finishTokenCall(c)
 			return
 		}
 
@@ -181,7 +187,7 @@ func AuthMiddleware() gin.HandlerFunc {
 }
 
 // validateApiToken 在 api_token 表中查找与明文匹配且未过期的令牌。
-// 命中时尽力更新 last_used_at（忽略错误，避免影响主流程）。
+// 命中时尽力更新 last_used_at / call_count / last_used_ip（忽略错误，避免影响主流程）。
 // 注意：本函数只做哈希比对与过期判断，不导入 services 包（避免与 middleware 形成循环依赖）。
 func validateApiToken(plaintext string) (*models.ApiToken, bool) {
 	db := database.GetDB()
@@ -200,11 +206,100 @@ func validateApiToken(plaintext string) (*models.ApiToken, bool) {
 		}
 		if VerifyPassword(t.TokenHash, plaintext) {
 			nu := time.Now()
-			db.Model(&models.ApiToken{}).Where("id = ?", t.ID).Update("last_used_at", &nu)
+			db.Model(&models.ApiToken{}).Where("id = ?", t.ID).Updates(map[string]any{
+				"last_used_at": &nu,
+				"call_count":   gorm.Expr("call_count + 1"),
+			})
 			return &t, true
 		}
 	}
 	return nil, false
+}
+
+// maxTokenCallLogsPerToken 是每个令牌保留的调用记录条数上限，超出后裁剪最旧记录，
+// 避免高频机器人调用把数据库撑大。
+const maxTokenCallLogsPerToken = 200
+
+// recordTokenCall 在 c.Next() 返回后（即 handler 执行完、状态码已确定）写入调用明细，
+// 并更新令牌的最近来源 IP。必须在调用 c.Next() 之后执行本文函数的收尾部分。
+// 这里用 c.Set 记录起始信息，由 realRecordTokenCall 在 Next 之后写入。
+func recordTokenCall(c *gin.Context, tokenID uint) {
+	c.Set("_tokCallID", tokenID)
+	c.Set("_tokCallPath", c.Request.URL.Path)
+	c.Set("_tokCallMethod", c.Request.Method)
+	c.Set("_tokCallIP", resolveClientIP(c))
+}
+
+// finishTokenCall 在 handler 结束后写入调用记录（状态码此时已确定）。
+// 由 AuthMiddleware 在 c.Next() 返回后调用。
+func finishTokenCall(c *gin.Context) {
+	v, ok := c.Get("_tokCallID")
+	if !ok {
+		return
+	}
+	tokenID, _ := v.(uint)
+	if tokenID == 0 {
+		return
+	}
+	path, _ := c.Get("_tokCallPath")
+	method, _ := c.Get("_tokCallMethod")
+	ip, _ := c.Get("_tokCallIP")
+	pathStr, _ := path.(string)
+	methodStr, _ := method.(string)
+	ipStr, _ := ip.(string)
+	status := c.Writer.Status()
+
+	db := database.GetDB()
+	if db == nil {
+		return
+	}
+
+	// 异步写入，不阻塞响应；失败忽略。
+	go func() {
+		defer func() { _ = recover() }()
+		_ = db.Model(&models.ApiToken{}).Where("id = ?", tokenID).
+			Update("last_used_ip", ipStr).Error
+		_ = db.Create(&models.TokenCallLog{
+			TokenID:    tokenID,
+			Method:     methodStr,
+			Path:       pathStr,
+			StatusCode: status,
+			IP:         ipStr,
+		}).Error
+
+		// 裁剪：超过上限时删除该令牌最旧的记录。
+		var count int64
+		if err := db.Model(&models.TokenCallLog{}).Where("token_id = ?", tokenID).Count(&count).Error; err != nil {
+			return
+		}
+		if count > maxTokenCallLogsPerToken {
+			excess := count - maxTokenCallLogsPerToken
+			var olds []models.TokenCallLog
+			db.Where("token_id = ?", tokenID).Order("created_at asc").Limit(int(excess)).Find(&olds)
+			ids := make([]uint, 0, len(olds))
+			for _, o := range olds {
+				ids = append(ids, o.ID)
+			}
+			if len(ids) > 0 {
+				db.Delete(&models.TokenCallLog{}, ids)
+			}
+		}
+	}()
+}
+
+// resolveClientIP 优先取反代传入的 X-Forwarded-For 首个地址，其次 X-Real-IP，
+// 最后 c.ClientIP()（gin 已解析 RemoteAddr）。
+func resolveClientIP(c *gin.Context) string {
+	if xff := c.GetHeader("X-Forwarded-For"); xff != "" {
+		if idx := strings.IndexByte(xff, ','); idx >= 0 {
+			return strings.TrimSpace(xff[:idx])
+		}
+		return strings.TrimSpace(xff)
+	}
+	if xri := c.GetHeader("X-Real-IP"); xri != "" {
+		return strings.TrimSpace(xri)
+	}
+	return c.ClientIP()
 }
 
 // RequireAdmin 仅允许由管理员 JWT 调用的路由（如令牌管理接口）使用，

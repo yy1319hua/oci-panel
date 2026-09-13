@@ -28,16 +28,17 @@ func (s *OCIService) GetTrafficData(ctx context.Context, user *models.OciUser, v
 	// 按 VNIC 维度查流量必须使用 oci_vcn 命名空间（resourceId = VNIC OCID）。
 	// oci_computeagent 的 NetworksBytesIn/Out 的 resourceId 是「实例 OCID」且为全 VNIC 聚合，
 	// 用 VNIC ID 过滤会查不到任何数据流（表现为“无数据”）。
-	// 这里用 .sum() 聚合该时段字节数（与 OCI 控制台 VNIC 默认统计一致），分辨率 1 分钟。
-	inboundQuery := fmt.Sprintf("VnicFromNetworkBytes[1m]{resourceId = \"%s\"}.sum()", vnicId)
-	outboundQuery := fmt.Sprintf("VnicToNetworkBytes[1m]{resourceId = \"%s\"}.sum()", vnicId)
-
+	// 分辨率按查询跨度自适应：跨度越大用越粗的聚合间隔，避免数据点过密导致表格冗长。
 	compartmentId := user.OciTenantID
 	start := parseTime(startTime)
 	end := parseTime(endTime)
+	interval, timeLayout := pickInterval(start, end)
+
+	inboundQuery := fmt.Sprintf("VnicFromNetworkBytes[%s]{resourceId = \"%s\"}.sum()", interval, vnicId)
+	outboundQuery := fmt.Sprintf("VnicToNetworkBytes[%s]{resourceId = \"%s\"}.sum()", interval, vnicId)
 
 	// 记录查询要素，便于排查「无数据」问题（真实 OCI 报错会随函数返回，不再被吞掉）。
-	log.Printf("[流量查询] vnicId=%s compartment=%s start=%s end=%s", vnicId, compartmentId, start.Format(time.RFC3339), end.Format(time.RFC3339))
+	log.Printf("[流量查询] vnicId=%s compartment=%s start=%s end=%s interval=%s", vnicId, compartmentId, start.Format(time.RFC3339), end.Format(time.RFC3339), interval)
 
 	// 获取入站数据
 	inReq := monitoring.SummarizeMetricsDataRequest{
@@ -79,7 +80,7 @@ func (s *OCIService) GetTrafficData(ctx context.Context, user *models.OciUser, v
 			if dp.Timestamp == nil || dp.Value == nil {
 				continue
 			}
-			t := dp.Timestamp.Format("15:04")
+			t := dp.Timestamp.Format(timeLayout)
 			inboundMap[t] = fmt.Sprintf("%.2f", *dp.Value/1024/1024)
 			timeSet[t] = true
 		}
@@ -89,7 +90,7 @@ func (s *OCIService) GetTrafficData(ctx context.Context, user *models.OciUser, v
 			if dp.Timestamp == nil || dp.Value == nil {
 				continue
 			}
-			t := dp.Timestamp.Format("15:04")
+			t := dp.Timestamp.Format(timeLayout)
 			outboundMap[t] = fmt.Sprintf("%.2f", *dp.Value/1024/1024)
 			timeSet[t] = true
 		}
@@ -99,7 +100,7 @@ func (s *OCIService) GetTrafficData(ctx context.Context, user *models.OciUser, v
 	for t := range timeSet {
 		times = append(times, t)
 	}
-	sort.Strings(times) // 15:04 字典序即时间序（同一日内）
+	sort.Strings(times) // MM-DD HH:mm / HH:mm 字典序即时间序
 
 	trafficData.Time = times
 	for _, t := range times {
@@ -108,6 +109,23 @@ func (s *OCIService) GetTrafficData(ctx context.Context, user *models.OciUser, v
 	}
 
 	return trafficData, nil
+}
+
+// pickInterval 按查询时间跨度选择监控聚合间隔与时间轴显示格式。
+// 参考 OCI 控制台默认图表：跨度越大，间隔越粗，避免返回过多数据点导致表格冗长。
+// 返回 (interval, timeLayout)，interval 直接用于查询语句如 VnicFromNetworkBytes[5m]。
+func pickInterval(start, end time.Time) (string, string) {
+	span := end.Sub(start)
+	switch {
+	case span <= 6*time.Hour:
+		return "5m", "15:04"
+	case span <= 24*time.Hour:
+		return "15m", "15:04"
+	case span <= 7*24*time.Hour:
+		return "1h", "01-02 15:04"
+	default:
+		return "1d", "01-02"
+	}
 }
 
 func parseTime(timeStr string) time.Time {

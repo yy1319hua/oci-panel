@@ -8,6 +8,8 @@ export interface ApiToken {
   scope: 'full' | 'readonly'
   expiresAt: string | null
   lastUsedAt: string | null
+  callCount: number
+  lastUsedIp: string
   createdAt: string
 }
 
@@ -17,9 +19,21 @@ export interface CreateTokenResult {
   info: ApiToken
 }
 
+/** 一条令牌调用记录（参考青龙面板的调用日志）。 */
+export interface TokenCallLog {
+  id: number
+  tokenId: number
+  method: string
+  path: string
+  statusCode: number
+  ip: string
+  createdAt: string
+}
+
 export const tokenApi = {
   create: (req: { name: string; expiresInDays?: number }) =>
     post<CreateTokenResult>('/token', req),
   list: () => get<ApiToken[]>('/token/list'),
+  calls: (id: number) => get<TokenCallLog[]>(`/token/calls?id=${id}`),
   revoke: (id: number) => post('/token/revoke', { id })
 }

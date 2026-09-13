@@ -424,6 +424,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&InstancePreset{},
 		&AdminUser{},
 		&ApiToken{},
+		&TokenCallLog{},
 		&PasswordResetToken{},
 	)
 }

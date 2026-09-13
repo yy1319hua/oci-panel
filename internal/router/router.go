@@ -4,6 +4,7 @@ import (
 	"github.com/adiecho/oci-panel/internal/config"
 	"github.com/adiecho/oci-panel/internal/controllers"
 	"github.com/adiecho/oci-panel/internal/database"
+	"github.com/adiecho/oci-panel/internal/logger"
 	"github.com/adiecho/oci-panel/internal/middleware"
 	"github.com/adiecho/oci-panel/internal/services"
 	"github.com/gin-gonic/gin"
@@ -19,6 +20,8 @@ func Setup(r *gin.Engine, cfg *config.Config) *Services {
 	r.Use(middleware.RequestBodyLimit(2 << 20))
 	r.Use(middleware.CORS(cfg.Web.AllowOrigins))
 	r.Use(middleware.AuthMiddleware())
+	// API 访问日志：在实时日志页展示每个 /api 调用的方法/路径/状态码/耗时/来源。
+	r.Use(middleware.AccessLogger())
 
 	// 静态资源 - 前端构建文件
 	// assets 文件名带内容 hash，可安全长缓存（内容变了文件名必变）
@@ -43,6 +46,17 @@ func Setup(r *gin.Engine, cfg *config.Config) *Services {
 	schedulerService := services.NewSchedulerService(ociService)
 	taskService := services.NewTaskService(database.GetDB(), ociService)
 	telegramService := services.NewTelegramService(ociService)
+
+	// 把「后端日志」与「API 访问日志」统一汇入实时日志页：
+	//  - logger.SetBroadcaster：所有 log.Print* / slog 输出实时推送到 WebSocket；
+	//  - SetAccessLogSink：/api 访问日志同样推送。
+	// 两者都通过 wsService 的广播通道发出，前端实时日志页即可看到。
+	logger.SetBroadcaster(func(level, message string) {
+		wsService.SendLog(level, message)
+	})
+	middleware.SetAccessLogSink(func(level, message string) {
+		wsService.SendLog(level, message)
+	})
 
 	wsCtrl := controllers.NewWebSocketController(wsService, cfg.Web.AllowOrigins)
 	r.GET("/ws/logs", wsCtrl.HandleWebSocket)
@@ -206,6 +220,7 @@ func Setup(r *gin.Engine, cfg *config.Config) *Services {
 		{
 			token.POST("", tokenCtrl.CreateToken)
 			token.GET("/list", tokenCtrl.ListTokens)
+			token.GET("/calls", tokenCtrl.ListTokenCalls)
 			token.POST("/revoke", tokenCtrl.RevokeToken)
 			token.DELETE("/:id", tokenCtrl.RevokeTokenByID)
 		}

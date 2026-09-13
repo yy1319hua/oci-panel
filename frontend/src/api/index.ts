@@ -25,7 +25,7 @@ export type { TaskItem, TaskLog, CreateTaskReq } from './task'
 export { bootVolumeApi } from './bootVolume'
 
 export { tokenApi } from './token'
-export type { ApiToken, CreateTokenResult } from './token'
+export type { ApiToken, CreateTokenResult, TokenCallLog } from './token'
 
 export { instanceApi } from './instance'
 
