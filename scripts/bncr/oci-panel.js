@@ -11,7 +11,7 @@
  * @rule        ^oci\s+帮助$
  * @rule        ^oci\s+配置$
  * @priority    100
- * @admin       false
+ * @admin       true
  * @public      true
  * @classification ["甲骨文"]
  */
