@@ -2,7 +2,6 @@
 import { Loader2, BarChart3 } from 'lucide-vue-next'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 
 // 配置详情「流量统计」标签页（C7 从 Configs.vue 抽出）。
@@ -61,11 +60,21 @@ defineEmits<{
         </div>
         <div>
           <label class="block text-sm text-muted-foreground mb-1">开始时间</label>
-          <Input v-model="form.startTime" placeholder="YYYY-MM-DD HH:mm:ss" />
+          <input
+            v-model="form.startTime"
+            type="datetime-local"
+            step="1"
+            class="w-full h-10 px-3 rounded-md border border-input bg-background text-sm text-foreground"
+          />
         </div>
         <div>
           <label class="block text-sm text-muted-foreground mb-1">结束时间</label>
-          <Input v-model="form.endTime" placeholder="YYYY-MM-DD HH:mm:ss" />
+          <input
+            v-model="form.endTime"
+            type="datetime-local"
+            step="1"
+            class="w-full h-10 px-3 rounded-md border border-input bg-background text-sm text-foreground"
+          />
         </div>
       </div>
       <Button class="mt-4" :disabled="loading" @click="$emit('query')">

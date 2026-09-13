@@ -24,8 +24,11 @@ func (s *OCIService) GetTrafficData(ctx context.Context, user *models.OciUser, v
 	}
 
 	// 构建查询 - 入站流量
-	inboundQuery := fmt.Sprintf("NetworksBytesIn[1m]{resourceId = \"%s\"}.mean()", vnicId)
-	outboundQuery := fmt.Sprintf("NetworksBytesOut[1m]{resourceId = \"%s\"}.mean()", vnicId)
+	// 注意：按 VNIC 维度查流量必须使用 oci_vcn 命名空间（resourceId = VNIC OCID）。
+	// oci_computeagent 的 NetworksBytesIn/Out 的 resourceId 是「实例 OCID」且为全 VNIC 聚合，
+	// 用 VNIC ID 过滤会查不到任何数据流（表现为“无数据”）。
+	inboundQuery := fmt.Sprintf("VnicFromNetworkBytes[1m]{resourceId = \"%s\"}.mean()", vnicId)
+	outboundQuery := fmt.Sprintf("VnicToNetworkBytes[1m]{resourceId = \"%s\"}.mean()", vnicId)
 
 	compartmentId := user.OciTenantID
 
@@ -33,7 +36,7 @@ func (s *OCIService) GetTrafficData(ctx context.Context, user *models.OciUser, v
 	inReq := monitoring.SummarizeMetricsDataRequest{
 		CompartmentId: &compartmentId,
 		SummarizeMetricsDataDetails: monitoring.SummarizeMetricsDataDetails{
-			Namespace: stringPtr("oci_computeagent"),
+			Namespace: stringPtr("oci_vcn"),
 			Query:     &inboundQuery,
 			StartTime: &common.SDKTime{Time: parseTime(startTime)},
 			EndTime:   &common.SDKTime{Time: parseTime(endTime)},
@@ -58,7 +61,7 @@ func (s *OCIService) GetTrafficData(ctx context.Context, user *models.OciUser, v
 	outReq := monitoring.SummarizeMetricsDataRequest{
 		CompartmentId: &compartmentId,
 		SummarizeMetricsDataDetails: monitoring.SummarizeMetricsDataDetails{
-			Namespace: stringPtr("oci_computeagent"),
+			Namespace: stringPtr("oci_vcn"),
 			Query:     &outboundQuery,
 			StartTime: &common.SDKTime{Time: parseTime(startTime)},
 			EndTime:   &common.SDKTime{Time: parseTime(endTime)},
@@ -80,11 +83,20 @@ func (s *OCIService) GetTrafficData(ctx context.Context, user *models.OciUser, v
 }
 
 func parseTime(timeStr string) time.Time {
-	t, err := time.Parse("2006-01-02 15:04:05", timeStr)
-	if err != nil {
-		return time.Now().Add(-1 * time.Hour)
+	// 兼容前端 dateTime-local（YYYY-MM-DDTHH:mm）与带时区的 ISO 格式，
+	// 并统一转为 UTC（OCI Monitoring 以 UTC 为准），避免时间错位或无数据。
+	layouts := []string{
+		time.RFC3339Nano,
+		"2006-01-02T15:04:05Z07:00",
+		"2006-01-02 15:04:05",
+		"2006-01-02T15:04:05",
 	}
-	return t
+	for _, layout := range layouts {
+		if t, err := time.Parse(layout, timeStr); err == nil {
+			return t.UTC()
+		}
+	}
+	return time.Now().UTC().Add(-1 * time.Hour)
 }
 
 // MonthlyTrafficStats 月度流量统计结果

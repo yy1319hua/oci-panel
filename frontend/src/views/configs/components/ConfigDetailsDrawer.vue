@@ -79,9 +79,15 @@ const tabs = [
   { key: 'traffic', label: '流量统计', icon: BarChart3 }
 ]
 
-const formatDateTime = (date: Date) => {
-  const pad = (n: number) => n.toString().padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+const pad = (n: number) => n.toString().padStart(2, '0')
+// datetime-local 控件需要的本地墙钟格式：YYYY-MM-DDTHH:mm
+const toLocalInput = (date: Date) =>
+  `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+// 将 datetime-local（本地墙钟）转换为 UTC 的 ISO 字符串，避免时区错位
+const toUtcIso = (local: string) => {
+  if (!local) return ''
+  const d = new Date(local) // 无时区的 YYYY-MM-DDTHH:mm 会被当作本地时间解析
+  return isNaN(d.getTime()) ? local : d.toISOString()
 }
 
 // 打开抽屉时初始化详情（原 viewConfigDetails 主体，去掉自管的显隐开关）
@@ -189,8 +195,8 @@ const loadTrafficCondition = async () => {
     trafficCondition.value = response.data || { instances: [] }
     const now = new Date()
     const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000)
-    trafficForm.value.endTime = formatDateTime(now)
-    trafficForm.value.startTime = formatDateTime(oneHourAgo)
+    trafficForm.value.endTime = toLocalInput(now)
+    trafficForm.value.startTime = toLocalInput(oneHourAgo)
   } catch (error) {
     console.error('加载流量条件失败:', error)
   }
@@ -221,8 +227,8 @@ const loadTrafficData = async () => {
       configId: configDetails.value.userId,
       instanceId: trafficForm.value.instanceId,
       vnicId: trafficForm.value.vnicId,
-      startTime: trafficForm.value.startTime,
-      endTime: trafficForm.value.endTime
+      startTime: toUtcIso(trafficForm.value.startTime),
+      endTime: toUtcIso(trafficForm.value.endTime)
     })
     tabTraffic.value = response.data || { time: [], inbound: [], outbound: [] }
   } catch (error: any) {
