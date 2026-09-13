@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/adiecho/oci-panel/internal/models"
@@ -129,19 +130,37 @@ func pickInterval(start, end time.Time) (string, string) {
 }
 
 func parseTime(timeStr string) time.Time {
-	// 兼容前端 dateTime-local（YYYY-MM-DDTHH:mm）与带时区的 ISO 格式，
-	// 并统一转为 UTC（OCI Monitoring 以 UTC 为准），避免时间错位或无数据。
-	layouts := []string{
+	// 解析顺序很关键：带时区的格式必须先试，否则 "2026-01-02T15:04:05Z"
+	// 会被无时区的 "2006-01-02T15:04:05" 抢先匹配掉（后者只是恰好不匹配 Z 后缀，
+	// 但带偏移量的形式如 "+08:00" 就危险了）。
+	zonedLayouts := []string{
 		time.RFC3339Nano,
+		time.RFC3339,
 		"2006-01-02T15:04:05Z07:00",
-		"2006-01-02 15:04:05",
-		"2006-01-02T15:04:05",
+		"2006-01-02 15:04:05Z07:00",
 	}
-	for _, layout := range layouts {
+	for _, layout := range zonedLayouts {
 		if t, err := time.Parse(layout, timeStr); err == nil {
 			return t.UTC()
 		}
 	}
+
+	// 无时区的格式：前端 dateTime-local 输入控件产出的是**用户本地时间**，
+	// 必须按本地时区解释后再转 UTC。若沿用 time.Parse（按 UTC 解释），
+	// 服务器时区非 UTC 时用户选的 15:00 会被当成 UTC 15:00，
+	// 与实际期望相差一整个时区，表现为「查不到数据」或区间错位。
+	localLayouts := []string{
+		"2006-01-02 15:04:05",
+		"2006-01-02T15:04:05",
+		"2006-01-02 15:04",
+		"2006-01-02T15:04",
+	}
+	for _, layout := range localLayouts {
+		if t, err := time.ParseInLocation(layout, timeStr, time.Local); err == nil {
+			return t.UTC()
+		}
+	}
+
 	return time.Now().UTC().Add(-1 * time.Hour)
 }
 
@@ -208,124 +227,169 @@ func (s *OCIService) GetMonthlyTrafficStats(ctx context.Context, user *models.Oc
 	dailyInbound := map[string]int64{}
 	dailyOutbound := map[string]int64{}
 
-	// 遍历每个实例获取 VNIC 流量
-	for _, instance := range instances {
+	// 实例之间完全独立，改为并发处理。
+	// 此前串行遍历：每个实例要发 ListVnicAttachments + GetVnic + 3 次
+	// SummarizeMetricsData 共 5+ 次网络往返，多实例时耗时线性叠加（实测约 10s）。
+	// 这里用带并发上限的 goroutine 池，把总耗时压到接近单个实例的水平。
+	type instResult struct {
+		stat      InstanceTrafficStat
+		dailyIn   map[string]int64
+		dailyOut  map[string]int64
+		inbound   int64
+		outbound  int64
+		billable  int64
+		hasResult bool
+	}
+
+	const trafficConcurrency = 4 // 并发上限：兼顾速度与 OCI API 限流
+	sem := make(chan struct{}, trafficConcurrency)
+	results := make([]instResult, len(instances))
+	var wg sync.WaitGroup
+
+	for i, instance := range instances {
 		if instance.Id == nil {
 			continue
 		}
+		wg.Add(1)
+		sem <- struct{}{}
 
-		instStat := InstanceTrafficStat{InstanceID: *instance.Id}
-		if instance.DisplayName != nil {
-			instStat.DisplayName = *instance.DisplayName
-		}
+		go func(idx int, inst core.Instance) {
+			defer wg.Done()
+			defer func() { <-sem }()
 
-		// 获取实例的 VNIC 附件
-		vnicAttachReq := core.ListVnicAttachmentsRequest{
-			CompartmentId: &compartmentId,
-			InstanceId:    instance.Id,
-		}
-		vnicAttachResp, err := computeClient.ListVnicAttachments(ctx, vnicAttachReq)
-		if err != nil {
+			res := instResult{
+				dailyIn:  map[string]int64{},
+				dailyOut: map[string]int64{},
+			}
+			res.stat = InstanceTrafficStat{InstanceID: *inst.Id}
+			if inst.DisplayName != nil {
+				res.stat.DisplayName = *inst.DisplayName
+			}
+
+			// 获取实例的 VNIC 附件
+			vnicAttachReq := core.ListVnicAttachmentsRequest{
+				CompartmentId: &compartmentId,
+				InstanceId:    inst.Id,
+			}
+			vnicAttachResp, err := computeClient.ListVnicAttachments(ctx, vnicAttachReq)
+			if err != nil {
+				results[idx] = res
+				return
+			}
+
+			for _, attach := range vnicAttachResp.Items {
+				if attach.VnicId == nil {
+					continue
+				}
+
+				vnicReq := core.GetVnicRequest{VnicId: attach.VnicId}
+				vnicResp, err := vnClient.GetVnic(ctx, vnicReq)
+				if err != nil || vnicResp.Id == nil {
+					continue
+				}
+
+				vnicId := *vnicResp.Id
+
+				// 入站（实际）：VnicFromNetworkBytes（从网络到 VNIC = 入站）
+				inQuery := fmt.Sprintf("VnicFromNetworkBytes[1d]{resourceId = \"%s\"}.sum()", vnicId)
+				inReq := monitoring.SummarizeMetricsDataRequest{
+					CompartmentId: &compartmentId,
+					SummarizeMetricsDataDetails: monitoring.SummarizeMetricsDataDetails{
+						Namespace: stringPtr("oci_vcn"),
+						Query:     &inQuery,
+						StartTime: &common.SDKTime{Time: startOfMonth},
+						EndTime:   &common.SDKTime{Time: endOfMonth},
+					},
+				}
+				if inResp, e := monitoringClient.SummarizeMetricsData(ctx, inReq); e == nil {
+					for _, item := range inResp.Items {
+						for _, dp := range item.AggregatedDatapoints {
+							if dp.Value == nil {
+								continue
+							}
+							v := int64(*dp.Value)
+							res.inbound += v
+							res.stat.Inbound += v
+							if dp.Timestamp != nil {
+								res.dailyIn[dp.Timestamp.UTC().Format("2006-01-02")] += v
+							}
+						}
+					}
+				}
+
+				// 出站（实际）：VnicToNetworkBytes（从 VNIC 到网络 = 出站）
+				outQuery := fmt.Sprintf("VnicToNetworkBytes[1d]{resourceId = \"%s\"}.sum()", vnicId)
+				outReq := monitoring.SummarizeMetricsDataRequest{
+					CompartmentId: &compartmentId,
+					SummarizeMetricsDataDetails: monitoring.SummarizeMetricsDataDetails{
+						Namespace: stringPtr("oci_vcn"),
+						Query:     &outQuery,
+						StartTime: &common.SDKTime{Time: startOfMonth},
+						EndTime:   &common.SDKTime{Time: endOfMonth},
+					},
+				}
+				if outResp, e := monitoringClient.SummarizeMetricsData(ctx, outReq); e == nil {
+					for _, item := range outResp.Items {
+						for _, dp := range item.AggregatedDatapoints {
+							if dp.Value == nil {
+								continue
+							}
+							v := int64(*dp.Value)
+							res.outbound += v
+							res.stat.Outbound += v
+							if dp.Timestamp != nil {
+								res.dailyOut[dp.Timestamp.UTC().Format("2006-01-02")] += v
+							}
+						}
+					}
+				}
+
+				// 计费出站（best-effort）：VnicBillableBytesOut（免费额度外才计费）
+				billQuery := fmt.Sprintf("VnicBillableBytesOut[1d]{resourceId = \"%s\"}.sum()", vnicId)
+				billReq := monitoring.SummarizeMetricsDataRequest{
+					CompartmentId: &compartmentId,
+					SummarizeMetricsDataDetails: monitoring.SummarizeMetricsDataDetails{
+						Namespace: stringPtr("oci_vcn"),
+						Query:     &billQuery,
+						StartTime: &common.SDKTime{Time: startOfMonth},
+						EndTime:   &common.SDKTime{Time: endOfMonth},
+					},
+				}
+				if billResp, e := monitoringClient.SummarizeMetricsData(ctx, billReq); e == nil {
+					for _, item := range billResp.Items {
+						for _, dp := range item.AggregatedDatapoints {
+							if dp.Value != nil {
+								v := int64(*dp.Value)
+								res.billable += v
+								res.stat.Billable += v
+							}
+						}
+					}
+				}
+			}
+
+			res.hasResult = true
+			results[idx] = res
+		}(i, instance)
+	}
+
+	wg.Wait()
+
+	// 按原顺序汇总并发结果，保证输出稳定（并发写 map 不安全，故在汇总阶段串行合并）。
+	for _, res := range results {
+		if res.stat.InstanceID == "" {
 			continue
 		}
-
-		for _, attach := range vnicAttachResp.Items {
-			if attach.VnicId == nil {
-				continue
-			}
-
-			// 获取 VNIC 信息
-			vnicReq := core.GetVnicRequest{VnicId: attach.VnicId}
-			vnicResp, err := vnClient.GetVnic(ctx, vnicReq)
-			if err != nil {
-				continue
-			}
-
-			if vnicResp.Id == nil {
-				continue
-			}
-
-			vnicId := *vnicResp.Id
-
-			// 入站（实际）：VnicFromNetworkBytes（从网络到 VNIC = 入站）
-			inQuery := fmt.Sprintf("VnicFromNetworkBytes[1d]{resourceId = \"%s\"}.sum()", vnicId)
-			inReq := monitoring.SummarizeMetricsDataRequest{
-				CompartmentId: &compartmentId,
-				SummarizeMetricsDataDetails: monitoring.SummarizeMetricsDataDetails{
-					Namespace: stringPtr("oci_vcn"),
-					Query:     &inQuery,
-					StartTime: &common.SDKTime{Time: startOfMonth},
-					EndTime:   &common.SDKTime{Time: endOfMonth},
-				},
-			}
-			if inResp, e := monitoringClient.SummarizeMetricsData(ctx, inReq); e == nil {
-				for _, item := range inResp.Items {
-					for _, dp := range item.AggregatedDatapoints {
-						if dp.Value == nil {
-							continue
-						}
-						v := int64(*dp.Value)
-						stats.InboundTraffic += v
-						instStat.Inbound += v
-						if dp.Timestamp != nil {
-							dailyInbound[dp.Timestamp.UTC().Format("2006-01-02")] += v
-						}
-					}
-				}
-			}
-
-			// 出站（实际）：VnicToNetworkBytes（从 VNIC 到网络 = 出站）
-			outQuery := fmt.Sprintf("VnicToNetworkBytes[1d]{resourceId = \"%s\"}.sum()", vnicId)
-			outReq := monitoring.SummarizeMetricsDataRequest{
-				CompartmentId: &compartmentId,
-				SummarizeMetricsDataDetails: monitoring.SummarizeMetricsDataDetails{
-					Namespace: stringPtr("oci_vcn"),
-					Query:     &outQuery,
-					StartTime: &common.SDKTime{Time: startOfMonth},
-					EndTime:   &common.SDKTime{Time: endOfMonth},
-				},
-			}
-			if outResp, e := monitoringClient.SummarizeMetricsData(ctx, outReq); e == nil {
-				for _, item := range outResp.Items {
-					for _, dp := range item.AggregatedDatapoints {
-						if dp.Value == nil {
-							continue
-						}
-						v := int64(*dp.Value)
-						stats.OutboundTraffic += v
-						instStat.Outbound += v
-						if dp.Timestamp != nil {
-							dailyOutbound[dp.Timestamp.UTC().Format("2006-01-02")] += v
-						}
-					}
-				}
-			}
-
-			// 计费出站（best-effort）：VnicBillableBytesOut（免费额度外才计费，额度内为 0）
-			billQuery := fmt.Sprintf("VnicBillableBytesOut[1d]{resourceId = \"%s\"}.sum()", vnicId)
-			billReq := monitoring.SummarizeMetricsDataRequest{
-				CompartmentId: &compartmentId,
-				SummarizeMetricsDataDetails: monitoring.SummarizeMetricsDataDetails{
-					Namespace: stringPtr("oci_vcn"),
-					Query:     &billQuery,
-					StartTime: &common.SDKTime{Time: startOfMonth},
-					EndTime:   &common.SDKTime{Time: endOfMonth},
-				},
-			}
-			if billResp, e := monitoringClient.SummarizeMetricsData(ctx, billReq); e == nil {
-				for _, item := range billResp.Items {
-					for _, dp := range item.AggregatedDatapoints {
-						if dp.Value != nil {
-							v := int64(*dp.Value)
-							stats.BillableTraffic += v
-							instStat.Billable += v
-						}
-					}
-				}
-			}
+		stats.InboundTraffic += res.inbound
+		stats.OutboundTraffic += res.outbound
+		stats.BillableTraffic += res.billable
+		stats.Instances = append(stats.Instances, res.stat)
+		for d, v := range res.dailyIn {
+			dailyInbound[d] += v
 		}
-
-		stats.Instances = append(stats.Instances, instStat)
+		for d, v := range res.dailyOut {
+			dailyOutbound[d] += v
+		}
 	}
 
 	// 构建按天排序的日序列

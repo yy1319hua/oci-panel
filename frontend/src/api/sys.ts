@@ -57,6 +57,12 @@ export interface Profile {
   email: string
 }
 
+/** 历史日志（服务端环形缓冲快照），供日志页首屏立即渲染。 */
+export interface RecentLogs {
+  lines: string[]
+  count: number
+}
+
 export const sysApi = {
   login: (account: string, password: string) => post<LoginResultData>('/sys/login', { account, password }),
   checkMfaCode: (ticket: string, code: string) => post<TokenData>('/sys/checkMfaCode', { ticket, code }),
@@ -74,6 +80,12 @@ export const sysApi = {
   updateLogLevel: (level: string) => post('/sys/updateLogLevel', { level }),
   updateAccount: (account: string) => post<{ token: string; account: string }>('/sys/updateAccount', { account }),
   getGlance: () => get<Glance>('/sys/getGlance'),
+  /**
+   * 拉取服务端缓冲的历史日志。日志页首屏用它立即渲染，
+   * 不必等 WebSocket 建连完成（后者要经历取 ticket → 升级 → 回放三步）。
+   */
+  getRecentLogs: (params?: { lines?: number; level?: string }) =>
+    get<RecentLogs>('/sys/recentLogs', { params }),
   getVersion: () => get<VersionResponse>('/sys/getVersion'),
   requestPasswordReset: (email: string) => post('/sys/requestPasswordReset', { email }),
   resetPassword: (token: string, newPassword: string) => post('/sys/resetPassword', { token, newPassword })

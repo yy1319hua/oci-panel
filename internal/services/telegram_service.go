@@ -1,9 +1,11 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -145,6 +147,11 @@ func (s *TelegramService) UpdateConfig(botToken, chatID string, enabled bool, ap
 
 	if enabled && botToken != "" && chatID != "" {
 		s.StartBot()
+		// StartBot 在「已在运行」时会提前返回，此时它内部的 setMyCommands 不会执行。
+		// 但配置可能刚换了 bot token 或反代地址 —— 这两者都会改变命令菜单的归属，
+		// 必须重新注册，否则用户在新 bot 上看到的仍是空菜单 / 旧菜单。
+		// 该调用幂等且异步执行，不会拖慢配置保存。
+		go s.setMyCommands()
 	} else {
 		s.StopBot()
 	}
@@ -430,7 +437,14 @@ func (s *TelegramService) handleCommand(chatID int64, text string) {
 }
 
 // setMyCommands 注册 Telegram 命令菜单（用户在输入框输入 / 时可见），
-// 解决「不知道有哪些命令」的问题。失败仅记录日志，不影响主流程。
+// 解决「不知道有哪些命令」的问题。
+//
+// 关键点：Telegram 服务端会**缓存**命令菜单，只有再次调用 setMyCommands 才会刷新。
+// 因此这里必须在「bot 启动」和「配置变更（尤其是换 bot token）」两个时机都调用，
+// 否则改了命令列表、用户看到的仍是旧菜单。
+//
+// 失败会重试若干次：这是启动路径上的非关键调用，失败不应阻断 bot 运行，
+// 但也绝不能一次失败就永久放弃 —— 那样菜单会静默停留在旧状态，很难排查。
 func (s *TelegramService) setMyCommands() {
 	s.mu.RLock()
 	botToken := s.botToken
@@ -448,16 +462,59 @@ func (s *TelegramService) setMyCommands() {
 		{"command": "configs", "description": "配置列表"},
 		{"command": "version", "description": "版本信息"},
 	}
-	body, _ := json.Marshal(map[string]any{"commands": commands})
-
-	apiURL := fmt.Sprintf("%s/bot%s/setMyCommands", s.baseURL(), botToken)
-	resp, err := http.Post(apiURL, "application/json", strings.NewReader(string(body)))
+	body, err := json.Marshal(map[string]any{"commands": commands})
 	if err != nil {
-		log.Printf("setMyCommands failed: %v", err)
+		log.Printf("setMyCommands: 序列化命令失败: %v", err)
 		return
 	}
-	defer resp.Body.Close()
-	log.Println("Telegram command menu registered")
+
+	// 重试：反代/网络抖动都可能导致单次失败。命令菜单是幂等操作，重试无副作用。
+	const maxAttempts = 3
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if attempt > 1 {
+			time.Sleep(time.Duration(attempt-1) * 2 * time.Second)
+		}
+
+		apiURL := fmt.Sprintf("%s/bot%s/setMyCommands", s.baseURL(), botToken)
+		resp, err := http.Post(apiURL, "application/json", bytes.NewReader(body))
+		if err != nil {
+			lastErr = err
+			log.Printf("setMyCommands 第 %d/%d 次失败: %v", attempt, maxAttempts, err)
+			continue
+		}
+
+		// 必须读 body：Telegram 会用 HTTP 200 返回 {"ok":false,"description":...}，
+		// 只看状态码会把「token 无效」当成成功。
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+		resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			lastErr = fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+			log.Printf("setMyCommands 第 %d/%d 次失败: %v", attempt, maxAttempts, lastErr)
+			continue
+		}
+
+		var parsed struct {
+			Ok          bool   `json:"ok"`
+			Description string `json:"description"`
+		}
+		if err := json.Unmarshal(respBody, &parsed); err != nil {
+			lastErr = fmt.Errorf("解析响应失败: %w", err)
+			log.Printf("setMyCommands 第 %d/%d 次失败: %v", attempt, maxAttempts, lastErr)
+			continue
+		}
+		if !parsed.Ok {
+			lastErr = fmt.Errorf("telegram 返回失败: %s", parsed.Description)
+			log.Printf("setMyCommands 第 %d/%d 次失败: %v", attempt, maxAttempts, lastErr)
+			continue
+		}
+
+		log.Printf("Telegram 命令菜单已注册（%d 个命令）", len(commands))
+		return
+	}
+
+	log.Printf("setMyCommands 连续 %d 次失败，命令菜单可能仍为旧版本: %v", maxAttempts, lastErr)
 }
 
 func (s *TelegramService) getMainKeyboard() *InlineKeyboardMarkup {

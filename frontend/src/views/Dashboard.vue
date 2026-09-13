@@ -24,6 +24,13 @@ const router = useRouter()
 const loading = ref(true)
 const version = ref('')
 const configId = ref('')
+// loadFailed 区分「接口失败」与「真的没有实例」。
+// 二者在数据上都表现为空数组，但给用户的提示必须不同 —— 否则接口一挂，
+// 用户会以为自己的配置/实例丢了。
+const loadFailed = ref(false)
+// trafficLoading 独立于 loading：流量查询比实例查询慢得多，分开控制可让
+// 实例卡片先渲染，流量区块单独显示加载态，而不是整页一起等。
+const trafficLoading = ref(false)
 
 const instances = ref<InstanceInfo[]>([])
 
@@ -146,6 +153,18 @@ const loadVersion = async () => {
 
 const loadOverview = async () => {
   loading.value = true
+  loadFailed.value = false
+  // 先清空流量旧值，避免刷新时 loading 被判失效、直接展示上一轮的陈旧数据。
+  traffic.value = {
+    totalBytes: 0,
+    inboundBytes: 0,
+    outboundBytes: 0,
+    billableBytes: 0,
+    freeAllowance: 0,
+    allowancePct: 0,
+    instances: [],
+    daily: []
+  }
   try {
     // 1. 取唯一配置
     const cfgRes = await ociApi.userPage({ page: 1, pageSize: 1 })
@@ -156,50 +175,73 @@ const loadOverview = async () => {
     }
     configId.value = cfg.id
 
-    // 2. 实例列表（并行发起，失败互不影响）
-    try {
-      const instRes = await ociApi.detailsInstances({ configId: cfg.id })
-      instances.value = instRes.data || []
-    } catch {
-      instances.value = []
-    }
+    // 2. 实例与流量**并行**发起。
+    //
+    // 此前是两段串行 await：流量接口单次可能耗时数秒（缓存未命中时需实时
+    // 查询 OCI），实例列表要等它跑完才开始加载，用户于是先看到一段空白。
+    // 两者互不依赖，并行后总耗时取二者较大值而非之和。
+    trafficLoading.value = true
 
-    // 3. 账号级月度流量（总流量 + 每实例明细 + 实际/计费）
-    try {
-      const mRes = await ociApi.monthlyTraffic(cfg.id)
-      const m = mRes.data
-      const total = (m.inboundTraffic || 0) + (m.outboundTraffic || 0)
-      const insts: TrafficInstance[] = (m.instances || []).map((it, i) => {
-        const t = (it.inbound || 0) + (it.outbound || 0)
-        return {
-          id: it.instanceId,
-          name: it.displayName || it.instanceId,
-          total: t,
-          inbound: it.inbound || 0,
-          outbound: it.outbound || 0,
-          pct: total > 0 ? Math.round((t / total) * 100) : 0,
-          color: INSTANCE_COLORS[i % INSTANCE_COLORS.length]
+    const instancesTask = ociApi
+      .detailsInstances({ configId: cfg.id })
+      .then(res => {
+        instances.value = res.data || []
+      })
+      .catch((error: any) => {
+        // 不吞掉错误：置 loadFailed 让模板给出「加载失败」而非「暂无实例」。
+        instances.value = []
+        loadFailed.value = true
+        toast.error(error?.message || '实例列表加载失败')
+      })
+      .finally(() => {
+        // 实例先回来就先解除整页 loading，不必被慢的流量请求拖住。
+        loading.value = false
+      })
+
+    const trafficTask = ociApi
+      .monthlyTraffic(cfg.id)
+      .then(mRes => {
+        const m = mRes.data
+        const total = (m.inboundTraffic || 0) + (m.outboundTraffic || 0)
+        const insts: TrafficInstance[] = (m.instances || []).map((it, i) => {
+          const t = (it.inbound || 0) + (it.outbound || 0)
+          return {
+            id: it.instanceId,
+            name: it.displayName || it.instanceId,
+            total: t,
+            inbound: it.inbound || 0,
+            outbound: it.outbound || 0,
+            pct: total > 0 ? Math.round((t / total) * 100) : 0,
+            color: INSTANCE_COLORS[i % INSTANCE_COLORS.length]
+          }
+        })
+        const daily = (m.dailyLabels || []).map((_, i) => (m.dailyInbound[i] || 0) + (m.dailyOutbound[i] || 0))
+        const allowancePct = m.freeAllowance > 0 ? Math.min(100, (total / m.freeAllowance) * 100) : 0
+        traffic.value = {
+          totalBytes: total,
+          inboundBytes: m.inboundTraffic || 0,
+          outboundBytes: m.outboundTraffic || 0,
+          billableBytes: m.billableTraffic || 0,
+          freeAllowance: m.freeAllowance || 0,
+          allowancePct,
+          instances: insts,
+          daily
         }
       })
-      const daily = (m.dailyLabels || []).map((_, i) => (m.dailyInbound[i] || 0) + (m.dailyOutbound[i] || 0))
-      const allowancePct = m.freeAllowance > 0 ? Math.min(100, (total / m.freeAllowance) * 100) : 0
-      traffic.value = {
-        totalBytes: total,
-        inboundBytes: m.inboundTraffic || 0,
-        outboundBytes: m.outboundTraffic || 0,
-        billableBytes: m.billableTraffic || 0,
-        freeAllowance: m.freeAllowance || 0,
-        allowancePct,
-        instances: insts,
-        daily
-      }
-    } catch {
-      /* 流量查询失败不阻断概览 */
-    }
+      .catch(() => {
+        /* 流量查询失败不阻断概览 */
+      })
+      .finally(() => {
+        trafficLoading.value = false
+      })
+
+    await Promise.all([instancesTask, trafficTask])
   } catch (error: any) {
+    loadFailed.value = true
     toast.error(error.message || '加载概览失败')
   } finally {
     loading.value = false
+    trafficLoading.value = false
   }
 }
 
@@ -229,6 +271,12 @@ onMounted(() => {
 
       <div v-if="loading" class="h-24 flex items-center justify-center">
         <Activity class="w-6 h-6 animate-spin text-primary" />
+      </div>
+      <div
+        v-else-if="loadFailed && !hasInstance"
+        class="text-destructive/90 text-sm py-8 text-center border border-dashed border-destructive/40 rounded-lg"
+      >
+        实例列表加载失败，请稍后重试（不是配置丢失）
       </div>
       <div v-else-if="!hasInstance" class="text-muted-foreground text-sm py-8 text-center border border-dashed rounded-lg">
         暂无实例，请在「配置管理」中添加配置并查看详情
@@ -301,6 +349,11 @@ onMounted(() => {
           <ArrowRight class="w-4 h-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
+          <div v-if="trafficLoading && traffic.totalBytes === 0" class="h-16 flex items-center gap-2 text-sm text-muted-foreground">
+            <Activity class="w-4 h-4 animate-spin text-primary" />
+            正在加载流量数据...
+          </div>
+          <template v-else>
           <div class="flex flex-wrap items-end gap-8">
             <div>
               <p class="text-sm text-muted-foreground">总流量（本月实际）</p>
@@ -354,6 +407,7 @@ onMounted(() => {
             </div>
           </div>
           <div v-else class="mt-4 text-xs text-muted-foreground">暂无实例流量明细</div>
+          </template>
         </CardContent>
       </Card>
 

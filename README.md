@@ -1,44 +1,84 @@
 # OCI Panel
 
-一个功能强大的 Oracle Cloud Infrastructure (OCI) 管理面板，提供实例管理、自动抢机、密钥管理等功能。
+一个 Oracle Cloud Infrastructure (OCI) 管理面板，覆盖实例运维、网络与防火墙配置、流量与成本监控、租户与身份管理，并提供 Telegram 机器人远程操作。
+
+> 本文档描述的是**当前代码的实际功能**。功能清单来自 `internal/router/router.go` 的路由注册与 `frontend/src/router/index.ts` 的页面路由，不包含已移除的历史功能。
 
 ## 功能特性
 
-- **实例管理** - 查看、创建、启动、停止、重启实例
-- **自动抢机** - 支持定时任务自动创建实例
-- **密钥管理** - 管理 OCI API 密钥配置
-- **预设配置** - 保存常用实例配置模板
-- **Telegram 通知** - 支持 Telegram Bot 消息推送
-- **流量统计** - 实例流量监控与统计
-- **安全组管理** - 管理实例安全规则
-- **IP 管理** - 公网 IP 分配与管理
+### 实例管理
+
+- 查看实例列表与详情（规格、IP、引导卷、运行状态）
+- 启动 / 停止 / 重启 / 终止实例
+- 修改实例名称与引导卷配置
+- 创建 **Cloud Shell** 连接
+- **一键测活**：批量检测实例连通性
+- **自动救援**（Auto Rescue）：实例异常时自动尝试恢复
+- **500Mbps 带宽**：检测规格是否支持，并一键启用 / 关闭
+- 为实例挂载 **IPv6** 地址、更换公网 IP
+
+### 网络与防火墙
+
+- VCN / 子网列表查看
+- 安全列表（Security List）规则管理：新增、修改、删除
+- 防火墙规则**行内编辑与删除**，支持一键释放全部规则
+- 安全规则端口范围、协议、来源 / 目标的可视化配置
+
+### 流量与成本监控
+
+- **账号级月度流量汇总**：入站 / 出站总量、每实例明细
+- 区分**实际流量**与**计费流量**（Oracle 仅对出站计费，免费额度 10TB/月）
+- **每日成本查询**（Usage API），便于第一时间发现超额扣费
+- 流量趋势图与实例占比可视化
+- 流量查询支持**缓存加速**，避免每次打开首页都实时请求 OCI
+
+### 租户与身份管理
+
+- 租户信息查看（区域列表、创建时间、用户列表）
+- 租户用户管理：修改用户信息、重置密码、修改密码过期策略
+- 删除用户、删除 MFA 设备、删除 API Key
+
+### 主机与 IP
+
+- 更换实例公网 IP
+- 为实例挂载 IPv6 地址
+- 通过 Cloud Shell 直接连入实例排查问题
+
+### 系统与安全
+
+- 多配置管理：支持添加多个 OCI 配置并使用不同密钥
+- **API 令牌**：便于第三方程序调用面板接口，含调用日志审计
+- **双因素认证（TOTP）** 与 **通行密钥（Passkey / WebAuthn）**
+- 账号密码修改、登录账号变更、邮箱设置、密码邮件重置
+- 运行日志级别在线调整（debug / info / warn / error），即时生效
+- **面板日志**页：后端日志与 API 调用日志实时推送，支持搜索、级别筛选、行数筛选、复制与下载
+- 数据缓存开关与刷新间隔配置
+
+### Telegram 机器人
+
+- 消息推送通知（配合机器人实时掌握实例状态）
+- 按钮菜单：一键测活、每日成本、实例统计、配置列表、版本信息、流量统计
+- 文本命令：`/menu` `/traffic` `/cost` `/instances` `/alive` `/configs` `/version`
+- 支持配置**自定义 API 反代地址**（国内网络无法直连 Telegram 时使用）
+- 命令菜单自动注册与刷新
 
 ## 截图预览
 
-### 仪表盘
-![仪表盘](./screenshots/1.jpg)
+> 📷 **待补充**：截图将在本版本部署后于真实环境重新拍摄并补充到此处。
+>
+> 此前引用的图片来自上游原作者的旧版本界面（侧边栏含已移除的「任务列表 /
+> 密钥管理 / 预设配置」，首页为旧版卡片布局），与本仓库当前实现不符，
+> 已移除以免误导。
 
-### 配置管理
-![实例管理](./screenshots/2.jpg)
-
-### 密钥配置
-![密钥配置](./screenshots/4.jpg)
-
-### 任务管理
-![任务管理](./screenshots/3.jpg)
-
-### 预设配置
-![预设配置](./screenshots/5.jpg)
-
-### 实例设置
-![系统设置](./screenshots/6.jpg)
+想先看实际效果，可参考「功能特性」一节的说明，或直接部署后访问面板。
 
 ## 技术栈
 
 ### 后端
 - Go
 - Gin Web Framework
-- SQLite
+- SQLite（GORM + 纯 Go 驱动 glebarez/sqlite，无需 CGO）
+- OCI Go SDK
 
 ### 前端
 - Vue 3
@@ -61,7 +101,7 @@
 cp config.toml.example config.toml
 ```
 
-配置示例：
+配置示例（完整项与注释见 `config.toml.example`）：
 
 ```toml
 [server]
@@ -69,15 +109,37 @@ port = "8999"
 
 [web]
 account = "admin"
-# 使用 bcrypt 哈希，不要使用 admin 或其他默认密码
+# 密码：可填明文，也可填 bcrypt 哈希（以 $2a$/$2b$/$2y$ 开头）。
+# 强烈建议使用 bcrypt 哈希，不要使用默认密码。
 password = "$2b$12$replace-with-a-generated-bcrypt-hash"
+# JWT 签名密钥。留空时服务会自动生成随机密钥并持久化到数据库（重启保持不变）。
+jwt_secret = ""
+# 跨域来源白名单，留空表示仅允许同源（生产同源部署无需配置）。
+allow_origins = []
 
 [database]
-dsn = "oci-helper.db"
+dsn = "db/oci-helper.db"
 
 [logging]
 level = "info"
+
+[passkey]
+# WebAuthn 的 Relying Party ID，通常是你的域名（不含协议与端口）。
+# 本地开发用 "localhost"，生产环境填实际域名。
+rp_id = "localhost"
+rp_origins = ["http://localhost:8999"]
+
+[email]
+# 邮件服务商（目前支持 resend），用于密码重置邮件。
+provider = "resend"
+resend_api_key = ""
+from = ""
+# 面板对外地址，用于拼接密码重置链接。
+public_url = "https://panel.example.com"
 ```
+
+> 关于密码哈希：`htpasswd -bnBC 12 "" 'your-password' | tr -d ':\n'`
+> 生成的 `$2y$...` 整体填入 `password` 即可（明文仍然兼容，但不推荐）。
 
 ### 构建运行
 
@@ -94,6 +156,9 @@ level = "info"
 build.bat
 oci-panel.exe
 ```
+
+> `build.sh` 会先构建前端（`frontend/dist/`）再编译后端。其提示信息中的端口
+> 是历史遗留文案，实际监听端口以 `config.toml` 的 `[server].port` 为准（默认 `8999`）。
 
 ### 访问面板
 
@@ -118,6 +183,27 @@ npm run dev
 ```bash
 go run main.go
 ```
+
+### 测试
+
+```bash
+go test ./...
+go test -race ./...   # 并发安全回归
+cd frontend && npx vue-tsc --noEmit   # 前端类型检查
+```
+
+## 版本号
+
+版本号以 **git tag 为唯一数据源**：构建时通过 `-ldflags` 注入到
+`internal/version.AppVersion`，后端接口 `/api/sys/getVersion`、Telegram
+机器人与前端界面均读取该值。发布新版本只需打 tag，无需改动代码。
+
+```bash
+go build -ldflags "-X github.com/adiecho/oci-panel/internal/version.AppVersion=$(git describe --tags --always)" -o oci-panel main.go
+```
+
+> 注：仓库中的 `build.sh` 目前未做版本注入（产出的是 `version.go` 中的默认常量
+> `1.0.8`）。若需版本号跟随 tag，请使用上面带 `-ldflags` 的命令构建。
 
 ## License
 

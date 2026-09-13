@@ -69,6 +69,7 @@ func Setup(r *gin.Engine, cfg *config.Config) *Services {
 		sys.POST("/resetPassword", sysCtrl.ResetPassword)
 		sys.POST("/wsTicket", wsCtrl.IssueTicket)
 		sys.GET("/getGlance", sysCtrl.GetGlance)
+		sys.GET("/recentLogs", wsCtrl.GetRecentLogs)
 		sys.GET("/getVersion", sysCtrl.GetVersion)
 		sys.GET("/getSysCfg", sysCtrl.GetSysCfg)
 		sys.POST("/updateCacheCfg", sysCtrl.UpdateCacheCfg)

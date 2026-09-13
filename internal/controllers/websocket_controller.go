@@ -1,9 +1,11 @@
 package controllers
 
 import (
+	"encoding/json"
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -49,6 +51,121 @@ func NewWebSocketController(wsService *services.WebSocketService, allowedOrigins
 		CheckOrigin:     wc.checkOrigin,
 	}
 	return wc
+}
+
+// 历史日志接口的参数边界。行数上限与环形缓冲容量（historyMax=2000）保持一致，
+// 避免出现「请求 5000 行却只能返回 2000 行」这种前端无法解释的静默截断。
+const (
+	recentLogsDefaultLines = 300
+	recentLogsMaxLines     = 2000
+)
+
+// validLogLevels 供按级别过滤时做白名单校验，避免把任意字符串拼进匹配逻辑。
+var recentLogsLevels = map[string]struct{}{
+	"INFO": {}, "WARN": {}, "ERROR": {}, "DEBUG": {}, "SUCCESS": {},
+}
+
+// GetRecentLogs 返回服务端环形缓冲中的历史日志（JSON），供日志页首屏立即渲染。
+//
+// 为什么需要它：WebSocket 建连要经历「取 ticket → 升级 → 回放历史」三步，
+// 期间前端只能显示「正在连接日志流...」的空白。改为此接口先同步拉一次历史，
+// 页面一打开就有内容，随后 WebSocket 再无缝接上实时增量。
+//
+// 查询参数：
+//   - lines：返回最后 N 行，默认 300，上限 2000。
+//   - level：可选，按级别精确过滤（INFO/WARN/ERROR/DEBUG/SUCCESS）。
+func (wc *WebSocketController) GetRecentLogs(c *gin.Context) {
+	lines := recentLogsDefaultLines
+	if raw := strings.TrimSpace(c.Query("lines")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			lines = parsed
+		}
+	}
+	if lines > recentLogsMaxLines {
+		lines = recentLogsMaxLines
+	}
+
+	level := strings.ToUpper(strings.TrimSpace(c.Query("level")))
+	levelFilter := ""
+	if level != "" && level != "ALL" {
+		if _, ok := recentLogsLevels[level]; !ok {
+			c.JSON(http.StatusBadRequest, models.ErrorResponse(400, "invalid level"))
+			return
+		}
+		levelFilter = level
+	}
+
+	history := wc.wsService.GetHistory()
+
+	// 从尾部往前取，命中足够行数即停：避免为了最后 300 行而遍历并复制全部历史。
+	// 反向收集后再翻转，可保证返回顺序仍是「旧 → 新」，与实时推送的追加方向一致。
+	collected := make([]string, 0, lines)
+	for i := len(history) - 1; i >= 0 && len(collected) < lines; i-- {
+		line := history[i]
+		if levelFilter != "" && !logLineHasLevel(line, levelFilter) {
+			continue
+		}
+		collected = append(collected, line)
+	}
+
+	total := len(collected)
+	result := make([]string, total)
+	for i := 0; i < total; i++ {
+		result[i] = collected[total-1-i]
+	}
+
+	c.JSON(http.StatusOK, models.SuccessResponse(gin.H{
+		"lines": result,
+		"count": total,
+	}, "success"))
+}
+
+// logLineHasLevel 判断一行日志的级别。
+//
+// 历史缓冲里可能混有两种格式：
+//   - SendLog 产出的文本行 "[2006-01-02 15:04:05] LEVEL: 内容"；
+//   - SendStructuredLog 产出的 JSON `{"time":..,"level":"LEVEL","message":..}`。
+//
+// 因此不能只按 `"] "` 前缀匹配 —— 那样结构化日志会被级别过滤整片丢掉。
+func logLineHasLevel(line, level string) bool {
+	// 结构化 JSON 格式：直接找 "level":"XXX" 字段。
+	if strings.HasPrefix(strings.TrimSpace(line), "{") {
+		return jsonHasLevel(line, level)
+	}
+
+	// 文本格式：剥掉开头的 "[时间戳] " 前缀后再比对级别。
+	if strings.HasPrefix(line, "[") {
+		if idx := strings.Index(line, "] "); idx >= 0 {
+			line = line[idx+2:]
+		}
+	}
+	if len(line) < len(level) || !strings.EqualFold(line[:len(level)], level) {
+		return false
+	}
+	// 级别后必须紧跟分隔符（":" / 引号 / 空格 或已到行尾），
+	// 避免 "ERRORX" 这类前缀被误判成 ERROR。
+	if len(line) == len(level) {
+		return true
+	}
+	switch line[len(level)] {
+	case ':', '"', ' ', '\t':
+		return true
+	default:
+		return false
+	}
+}
+
+// jsonHasLevel 判断结构化日志 JSON 里的 level 字段是否等于目标级别。
+// 用 Unmarshal 而不是字符串匹配，避免 message 正文里出现 "level":"ERROR"
+// 这类内容造成误命中。
+func jsonHasLevel(line, level string) bool {
+	var parsed struct {
+		Level string `json:"level"`
+	}
+	if err := json.Unmarshal([]byte(line), &parsed); err != nil {
+		return false
+	}
+	return strings.EqualFold(parsed.Level, level)
 }
 
 // checkOrigin 仅允许同源（Origin 的 host 与请求 Host 一致）或显式白名单内的来源建立连接，

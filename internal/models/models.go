@@ -242,7 +242,12 @@ type OciConfigCache struct {
 	VolumesData      string    `gorm:"column:volumes_data;type:text" json:"volumesData"`
 	VcnsData         string    `gorm:"column:vcns_data;type:text" json:"vcnsData"`
 	TenantData       string    `gorm:"column:tenant_data;type:text" json:"tenantData"`
-	UpdateTime       time.Time `gorm:"column:update_time" json:"updateTime"`
+	// TrafficData 缓存账号级月度流量统计（JSON），避免首页每次实时查询 OCI（约 10s）。
+	TrafficData string `gorm:"column:traffic_data;type:text" json:"trafficData"`
+	// TrafficUpdateTime 流量数据的独立时间戳。流量查询成本远高于其他项，
+	// 单独计时以便用更长的刷新间隔，不受整表 UpdateTime 影响。
+	TrafficUpdateTime time.Time `gorm:"column:traffic_update_time" json:"trafficUpdateTime"`
+	UpdateTime        time.Time `gorm:"column:update_time" json:"updateTime"`
 }
 
 func (OciConfigCache) TableName() string {

@@ -1,16 +1,29 @@
 <script setup lang="ts">
-import { ref, shallowRef, onMounted, onUnmounted, nextTick } from 'vue'
-import { Wifi, WifiOff, Trash2, Terminal } from 'lucide-vue-next'
+import { ref, shallowRef, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { RefreshCw, Copy, Download, Trash2 } from 'lucide-vue-next'
 import { toast } from '@/composables/useToast'
 import { useAuthStore } from '@/stores/auth'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { sysApi } from '@/api'
 
+/**
+ * 日志页采用「混合模式」：首屏先走 HTTP 同步拉取服务端缓冲的历史日志，
+ * 页面立刻有内容；随后 WebSocket 无缝接上，转为实时推送。
+ *
+ * 这样做的原因：WebSocket 建连链路较长（取 ticket → 协议升级 → 回放历史），
+ * 只依赖它做首屏，用户会先看到一段「正在连接日志流...」的空白 —— 即使连接
+ * 永远失败，那段空白也解释不了「为什么没日志」。而 HTTP 接口成功即代表
+ * 服务端活着，失败也能给出明确错误。
+ */
+
+type LogLevel = 'INFO' | 'WARN' | 'ERROR' | 'DEBUG' | 'SUCCESS'
+
 interface LogEntry {
+  seq: number
+  ts: string
+  level: LogLevel
   message: string
-  type: 'info' | 'error' | 'warning' | 'success'
 }
 
 const authStore = useAuthStore()
@@ -18,34 +31,120 @@ const logs = ref<LogEntry[]>([])
 const isConnected = ref(false)
 const ws = shallowRef<WebSocket | null>(null)
 const connecting = ref(false)
+const loadingHistory = ref(false)
 const logConsole = ref<HTMLElement>()
+
 let disposed = false
 let manualClose = false // 用户主动断开后不再自动重连
 let socketSeq = 0 // 当前有效 socket 序号，用于作废过期回调
 let retries = 0 // 自动重连次数
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+let seqCounter = 0 // 日志条目的稳定唯一键
+
+// 回放收口机制：服务端在建连后会连续推历史行，之后才转入实时。
+// 两种行没有分隔标志，故用「静默窗口」判定回放结束 —— 一旦指定时间内
+// 没有新行到达，就把这批行当作历史批次合并去重；若期间来了实时行，
+// 也只是稍晚一点落到视图上，不会丢。
+let replayBuffer: string[] = []
+let replaying = false
+let replayTimer: ReturnType<typeof setTimeout> | null = null
+const REPLAY_IDLE_MS = 250
 
 // 日志缓冲上限：实时日志流可能无限增长，超过上限后丢弃最旧的条目，
 // 避免 DOM 节点与内存无界膨胀导致页面卡顿。
-const MAX_LOG_ENTRIES = 1000
+const MAX_LOG_ENTRIES = 2000
 const MAX_RETRIES = 12
 const RECONNECT_DELAY = 3000
+const INITIAL_HISTORY_LINES = 500
 
-const addLog = (message: string, type: LogEntry['type'] = 'info') => {
-  const timestamp = new Date().toLocaleTimeString('zh-CN')
-  logs.value.push({
-    message: `[${timestamp}] ${message}`,
-    type
-  })
-  if (logs.value.length > MAX_LOG_ENTRIES) {
-    logs.value.splice(0, logs.value.length - MAX_LOG_ENTRIES)
+// —— 筛选状态 ——
+// 搜索关键字：只显示包含关键字的行（不是高亮，而是过滤）。
+const keyword = ref('')
+const levelFilter = ref<'ALL' | LogLevel>('ALL')
+const lineLimit = ref(200)
+const autoRefresh = ref(true)
+
+// 新日志提示：用户上翻查看历史时不应被强行拽回底部。
+const pendingCount = ref(0)
+const atBottom = ref(true)
+
+const levelOptions: Array<'ALL' | LogLevel> = ['ALL', 'INFO', 'SUCCESS', 'WARN', 'ERROR', 'DEBUG']
+const lineOptions = [100, 200, 500, 1000, 2000]
+
+/**
+ * 过滤后的日志：按级别 + 关键字筛选，再截取最后 N 行。
+ *
+ * 顺序很关键 —— 必须先筛选再截断。若先截断，用户搜索一个只出现在
+ * 较早位置的词时会得到空结果，而实际上匹配行是存在的。
+ */
+const filteredLogs = computed(() => {
+  const kw = keyword.value.trim().toLowerCase()
+  let result = logs.value
+
+  if (levelFilter.value !== 'ALL') {
+    result = result.filter(l => l.level === levelFilter.value)
   }
+  if (kw) {
+    result = result.filter(l => l.message.toLowerCase().includes(kw))
+  }
+  if (result.length > lineLimit.value) {
+    result = result.slice(result.length - lineLimit.value)
+  }
+  return result
+})
 
+const isFiltering = computed(() => keyword.value.trim() !== '' || levelFilter.value !== 'ALL')
+
+/** 解析服务端的 "[时间] LEVEL: 内容" 格式；无法识别时按 INFO 处理。 */
+const parseServerLine = (raw: string): Omit<LogEntry, 'seq'> => {
+  const m = raw.match(/^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]\s*(INFO|WARN|ERROR|DEBUG|SUCCESS)\s*[:：]\s*(.*)$/s)
+  if (m) {
+    return { ts: m[1], level: m[2] as LogLevel, message: m[3] }
+  }
+  return { ts: '', level: 'INFO', message: raw }
+}
+
+const scrollToBottom = () => {
   nextTick(() => {
     if (logConsole.value) {
       logConsole.value.scrollTop = logConsole.value.scrollHeight
     }
   })
+}
+
+/**
+ * 追加一条日志。
+ * 只有在用户本就停留在底部（或自动刷新开启且未上翻）时才自动滚动，
+ * 否则只累加「N 条新日志」提示，避免打断用户查看历史。
+ */
+const appendLine = (raw: string) => {
+  const parsed = parseServerLine(raw)
+  logs.value.push({ seq: ++seqCounter, ...parsed })
+  if (logs.value.length > MAX_LOG_ENTRIES) {
+    logs.value.splice(0, logs.value.length - MAX_LOG_ENTRIES)
+  }
+
+  if (!autoRefresh.value) return
+  if (atBottom.value) {
+    scrollToBottom()
+  } else {
+    pendingCount.value++
+  }
+}
+
+// onScroll 记录用户是否停留在底部（留 24px 容差，避免像素级抖动误判）。
+const handleScroll = () => {
+  const el = logConsole.value
+  if (!el) return
+  const distance = el.scrollHeight - el.scrollTop - el.clientHeight
+  atBottom.value = distance < 24
+  if (atBottom.value) pendingCount.value = 0
+}
+
+const jumpToLatest = () => {
+  atBottom.value = true
+  pendingCount.value = 0
+  scrollToBottom()
 }
 
 const clearReconnect = () => {
@@ -55,45 +154,102 @@ const clearReconnect = () => {
   }
 }
 
-// appendServerLine 处理服务端推送的日志行。服务端历史回放/实时日志已是
-// 「[时间] LEVEL: 内容」格式，识别后不再重复加本地时间戳，并据 LEVEL 着色。
-const appendServerLine = (raw: string) => {
-  const m = raw.match(/^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]\s*\[(INFO|WARN|ERROR|DEBUG|SUCCESS)\]\s*(.*)$/)
-  if (m) {
-    const typeMap: Record<string, LogEntry['type']> = {
-      INFO: 'info',
-      WARN: 'warning',
-      ERROR: 'error',
-      DEBUG: 'info',
-      SUCCESS: 'success'
-    }
-    logs.value.push({ message: raw, type: typeMap[m[2]] ?? 'info' })
-  } else {
-    logs.value.push({ message: raw, type: 'info' })
+const scheduleReplayFlush = () => {
+  if (replayTimer !== null) clearTimeout(replayTimer)
+  replayTimer = setTimeout(flushReplay, REPLAY_IDLE_MS)
+}
+
+/** 结束回放窗口：把暂存的历史行去重合并进视图，之后转入实时追加模式。 */
+const flushReplay = () => {
+  if (replayTimer !== null) {
+    clearTimeout(replayTimer)
+    replayTimer = null
   }
-  if (logs.value.length > MAX_LOG_ENTRIES) {
-    logs.value.splice(0, logs.value.length - MAX_LOG_ENTRIES)
-  }
-  nextTick(() => {
-    if (logConsole.value) {
-      logConsole.value.scrollTop = logConsole.value.scrollHeight
+  if (!replaying) return
+  replaying = false
+  const batch = replayBuffer
+  replayBuffer = []
+  if (batch.length) mergeWithoutDuplicates(batch)
+}
+
+const replaceLogs = (lines: string[]) => {
+  logs.value = lines.map(raw => ({ seq: ++seqCounter, ...parseServerLine(raw) }))
+  pendingCount.value = 0
+  scrollToBottom()
+}
+
+/**
+ * 合并一批日志行，按内容跳过尾部已有的重复行。
+ *
+ * 为什么需要去重：首屏已经通过 HTTP 拉到最近 N 行，而 WebSocket 建连时
+ * 服务端还会把缓冲区里的历史再回放一遍 —— 两批数据高度重叠。若直接追加，
+ * 用户会看到成对的重复日志。
+ *
+ * 做法是拿新批次的首行去「当前视图尾部若干行」里找锚点，找到就把锚点之后
+ * 的部分接上。只回看固定窗口（而非全表比对）是为了保持 O(窗口) 复杂度，
+ * 日志高频推送时不至于卡住主线程。
+ */
+const mergeWithoutDuplicates = (lines: string[]) => {
+  if (!lines.length) return
+
+  const ANCHOR_WINDOW = 400
+  const existing = logs.value
+  const tailStart = Math.max(0, existing.length - ANCHOR_WINDOW)
+  const first = lines[0]
+  let anchor = -1
+  for (let i = existing.length - 1; i >= tailStart; i--) {
+    if (rawOf(existing[i]) === first) {
+      anchor = i
+      break
     }
-  })
+  }
+
+  if (anchor < 0) {
+    // 完全没重叠（例如期间被 clear 过）：整批追加。
+    for (const raw of lines) appendLine(raw)
+    return
+  }
+
+  // 锚点之后的既有内容与这批的开头部分重复，按长度对齐后只追加新增部分。
+  const alreadyHave = existing.length - anchor
+  for (let i = alreadyHave; i < lines.length; i++) {
+    appendLine(lines[i])
+  }
+}
+
+/** 把内部条目还原成服务端原始行格式（用于去重比对）。 */
+const rawOf = (entry: LogEntry) => (entry.ts ? `[${entry.ts}] ${entry.level}: ${entry.message}` : entry.message)
+
+/**
+ * 首屏加载历史日志（HTTP 同步）。
+ * 失败不阻断流程 —— WebSocket 仍会尝试连接并回放历史，届时同样有内容。
+ */
+const loadHistory = async () => {
+  if (!authStore.token) return
+  loadingHistory.value = true
+  try {
+    const res = await sysApi.getRecentLogs({ lines: INITIAL_HISTORY_LINES })
+    if (disposed) return
+    replaceLogs(res.data?.lines ?? [])
+  } catch {
+    // 静默：WebSocket 回放会兜底，不必用 toast 打扰用户。
+  } finally {
+    if (!disposed) loadingHistory.value = false
+  }
 }
 
 const scheduleReconnect = () => {
-  if (disposed || manualClose || retries >= MAX_RETRIES) {
-    if (retries >= MAX_RETRIES) {
-      addLog('日志流重连次数过多，已停止自动重连，请手动点击「连接」', 'error')
-    }
-    return
-  }
+  if (disposed || manualClose || retries >= MAX_RETRIES) return
   clearReconnect()
   reconnectTimer = setTimeout(() => {
     retries++
-    addLog(`正在尝试重新连接日志流（第 ${retries} 次）...`, 'warning')
     connectWebSocket()
   }, RECONNECT_DELAY)
+}
+
+const buildWsUrl = (ticket: string) => {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${protocol}//${window.location.host}/ws/logs?ticket=${encodeURIComponent(ticket)}`
 }
 
 const connectWebSocket = async () => {
@@ -101,17 +257,15 @@ const connectWebSocket = async () => {
   if (ws.value || connecting.value) return
   const seq = ++socketSeq
   connecting.value = true
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
 
   try {
     if (!authStore.token) {
-      toast.error('未登录，无法连接日志流')
+      connecting.value = false
       return
     }
     const ticketResponse = await sysApi.issueWebSocketTicket()
     if (disposed || seq !== socketSeq || manualClose) return
-    const wsUrl = `${protocol}//${window.location.host}/ws/logs?ticket=${encodeURIComponent(ticketResponse.data.ticket)}`
-    const socket = new WebSocket(wsUrl)
+    const socket = new WebSocket(buildWsUrl(ticketResponse.data.ticket))
     ws.value = socket
 
     socket.onopen = () => {
@@ -119,32 +273,39 @@ const connectWebSocket = async () => {
       connecting.value = false
       isConnected.value = true
       retries = 0
-      addLog('WebSocket 连接成功', 'success')
-      toast.success('日志连接成功')
+      // 建连后服务端会立刻回放历史缓冲。这些行与 HTTP 首屏拉取的
+      // 内容高度重叠，先暂存起来走合并去重，避免页面出现成对重复日志。
+      replayBuffer = []
+      replaying = true
     }
 
     socket.onmessage = event => {
       if (seq !== socketSeq || ws.value !== socket) return
-      appendServerLine(event.data)
+      if (replaying) {
+        // 服务端回放的历史行与实时行没有显式分隔标志，用一个小延迟窗口
+        // 收口：把建连后极短时间内到达的行视为回放批次，统一去重合并。
+        replayBuffer.push(event.data)
+        scheduleReplayFlush()
+        return
+      }
+      appendLine(event.data)
     }
 
     socket.onerror = () => {
       if (seq !== socketSeq || ws.value !== socket) return
-      addLog('WebSocket 连接错误', 'error')
+      // 错误后紧接着会触发 onclose，重连逻辑统一在那里处理。
     }
 
     socket.onclose = () => {
       if (seq !== socketSeq) return
+      flushReplay()
       ws.value = null
       connecting.value = false
       isConnected.value = false
-      addLog('WebSocket 连接已断开', 'warning')
-      // 非主动断开则自动重连，保证日志持续显示
       if (!manualClose && !disposed) scheduleReconnect()
     }
   } catch {
     if (!disposed && seq === socketSeq && !manualClose) {
-      toast.error('无法建立WebSocket连接')
       scheduleReconnect()
     }
   } finally {
@@ -152,9 +313,10 @@ const connectWebSocket = async () => {
   }
 }
 
-const disconnectWebSocket = (manual = false) => {
-  manualClose = manual
+const disconnectWebSocket = () => {
+  manualClose = true
   clearReconnect()
+  flushReplay()
   socketSeq++ // 作废当前 socket 的所有回调
   connecting.value = false
   isConnected.value = false
@@ -166,65 +328,110 @@ const disconnectWebSocket = (manual = false) => {
     socket.onerror = null
     socket.onclose = null
     socket.close()
-    if (!disposed) addLog('WebSocket 连接已断开', 'warning')
   }
 }
 
-const toggleConnection = () => {
-  if (ws.value || connecting.value) {
-    disconnectWebSocket(true)
-    toast.info('已断开连接')
-  } else {
+/** 手动刷新：重新拉一次服务端历史（清掉当前视图），并确保实时流已连上。 */
+const refresh = async () => {
+  await loadHistory()
+  if (!ws.value && !connecting.value) {
     manualClose = false
     retries = 0
     connectWebSocket()
   }
+  toast.success('日志已刷新')
 }
 
 const clearLogs = () => {
   logs.value = []
-  toast.info('日志已清空')
+  pendingCount.value = 0
+  toast.info('当前视图已清空（服务端缓冲不受影响）')
 }
 
-const getLogColor = (type: LogEntry['type']) => {
-  switch (type) {
-    case 'success':
-      return 'text-success'
-    case 'error':
-      return 'text-destructive'
-    case 'warning':
-      return 'text-warning'
-    default:
-      return 'text-primary'
+const copyLogs = async () => {
+  const text = filteredLogs.value.map(l => (l.ts ? `[${l.ts}] ${l.level}: ${l.message}` : l.message)).join('\n')
+  if (!text) {
+    toast.info('没有可复制的日志')
+    return
+  }
+  try {
+    await navigator.clipboard.writeText(text)
+    toast.success(`已复制 ${filteredLogs.value.length} 行日志`)
+  } catch {
+    toast.error('复制失败，请检查浏览器剪贴板权限')
   }
 }
 
-onMounted(() => {
-  // 进入页面即自动连接，直接显示日志，无需手动点击「连接」；
-  // 切走再回来也会重新挂载并自动重连，不再需要手动操作。
+const downloadLogs = () => {
+  if (!filteredLogs.value.length) {
+    toast.info('没有可下载的日志')
+    return
+  }
+  const text = filteredLogs.value.map(l => (l.ts ? `[${l.ts}] ${l.level}: ${l.message}` : l.message)).join('\n')
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+  a.href = url
+  a.download = `panel-log-${stamp}.log`
+  // 必须挂到文档里再点击：部分浏览器对未挂载的 <a> 不触发下载。
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  // 延迟释放：click 触发的下载是异步的，立即 revoke 会让部分浏览器
+  // （Safari / Firefox）拿到空文件。
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+const levelClass = (level: LogLevel) => {
+  switch (level) {
+    case 'ERROR':
+      return 'text-destructive'
+    case 'WARN':
+      return 'text-warning'
+    case 'SUCCESS':
+      return 'text-success'
+    case 'DEBUG':
+      return 'text-muted-foreground'
+    default:
+      return 'text-foreground'
+  }
+}
+
+// 自动刷新关闭时，正在上翻的用户不应被新日志打扰；
+// 打开时若已停在底部，则立刻滚到最新。
+watch(autoRefresh, enabled => {
+  if (enabled && atBottom.value) {
+    pendingCount.value = 0
+    scrollToBottom()
+  }
+})
+
+onMounted(async () => {
+  // 先同步拉历史（立即出内容），再升级为 WebSocket 实时推送。
   manualClose = false
+  await loadHistory()
   connectWebSocket()
 })
 
 onUnmounted(() => {
   disposed = true
   clearReconnect()
-  disconnectWebSocket(false)
+  if (replayTimer !== null) {
+    clearTimeout(replayTimer)
+    replayTimer = null
+  }
+  disconnectWebSocket()
 })
 </script>
 
 <template>
   <div class="space-y-6">
     <!-- Header -->
-    <div
-      v-motion
-      :initial="{ opacity: 0, y: -20 }"
-      :enter="{ opacity: 1, y: 0 }"
-      class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4"
-    >
-      <div class="flex items-center gap-3">
-        <h1 class="text-3xl font-display font-bold">实时日志</h1>
-        <Badge :variant="isConnected ? 'success' : 'secondary'" class="gap-1">
+    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div class="flex items-center gap-3 flex-wrap">
+        <h1 class="text-3xl font-display font-bold">面板日志</h1>
+        <span class="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
           <span class="relative flex h-2 w-2">
             <span
               v-if="isConnected"
@@ -232,49 +439,103 @@ onUnmounted(() => {
             />
             <span
               class="relative inline-flex rounded-full h-2 w-2"
-              :class="isConnected ? 'bg-success' : 'bg-muted-foreground'"
+              :class="isConnected ? 'bg-success' : connecting ? 'bg-warning' : 'bg-muted-foreground'"
             />
           </span>
-          {{ isConnected ? '已连接' : (connecting ? '连接中' : '未连接') }}
-        </Badge>
+          {{ isConnected ? '已连接 · 实时推送' : connecting ? '连接中' : '未连接' }}
+        </span>
+        <span class="text-xs text-muted-foreground">
+          共 {{ logs.length }} 行<template v-if="isFiltering">，匹配 {{ filteredLogs.length }} 行</template>
+        </span>
       </div>
-      <div class="flex gap-2">
-        <Button variant="outline" @click="clearLogs">
-          <Trash2 class="w-4 h-4" />
-          清空日志
+      <div class="flex flex-wrap gap-2">
+        <Button variant="outline" size="sm" :disabled="loadingHistory" @click="refresh">
+          <RefreshCw class="w-4 h-4" :class="loadingHistory ? 'animate-spin' : ''" />
+          刷新
         </Button>
-        <Button :variant="isConnected ? 'destructive' : 'default'" :disabled="connecting" @click="toggleConnection">
-          <WifiOff v-if="isConnected" class="w-4 h-4" />
-          <Wifi v-else class="w-4 h-4" />
-          {{ connecting ? '连接中...' : isConnected ? '断开连接' : '连接' }}
+        <Button variant="outline" size="sm" @click="copyLogs">
+          <Copy class="w-4 h-4" />
+          复制
+        </Button>
+        <Button variant="outline" size="sm" @click="downloadLogs">
+          <Download class="w-4 h-4" />
+          下载
+        </Button>
+        <Button variant="outline" size="sm" @click="clearLogs">
+          <Trash2 class="w-4 h-4" />
+          清空
         </Button>
       </div>
     </div>
 
     <!-- Console Card -->
-    <Card
-      v-motion
-      :initial="{ opacity: 0, y: 20 }"
-      :enter="{ opacity: 1, y: 0, transition: { delay: 100 } }"
-      class="border-border/50"
-    >
-      <CardHeader class="border-b border-border/50 py-3">
-        <CardTitle class="flex items-center gap-2 text-base">
-          <Terminal class="w-4 h-4 text-primary" />
-          控制台输出
-        </CardTitle>
-      </CardHeader>
+    <Card class="border-border/50">
       <CardContent class="p-0">
-        <div ref="logConsole" class="bg-background rounded-b-lg p-4 h-[60vh] sm:h-[600px] overflow-y-auto font-mono text-xs sm:text-sm">
-          <div v-for="(log, index) in logs" :key="index" class="mb-1 leading-relaxed" :class="getLogColor(log.type)">
-            {{ log.message }}
+        <!-- 工具栏 -->
+        <div class="flex flex-wrap items-center gap-2 border-b border-border/50 px-4 py-3">
+          <input
+            v-model="keyword"
+            type="text"
+            placeholder="搜索日志内容（只显示匹配行）"
+            class="h-8 flex-1 min-w-[180px] rounded-md border border-border/60 bg-background px-3 text-sm
+                   placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+          <select
+            v-model="levelFilter"
+            class="h-8 rounded-md border border-border/60 bg-background px-2 text-sm focus:outline-none"
+          >
+            <option v-for="lv in levelOptions" :key="lv" :value="lv">
+              {{ lv === 'ALL' ? '全部级别' : lv }}
+            </option>
+          </select>
+          <select
+            v-model.number="lineLimit"
+            class="h-8 rounded-md border border-border/60 bg-background px-2 text-sm focus:outline-none"
+          >
+            <option v-for="n in lineOptions" :key="n" :value="n">最近 {{ n }} 行</option>
+          </select>
+          <label class="inline-flex items-center gap-1.5 text-xs text-muted-foreground select-none cursor-pointer">
+            <input v-model="autoRefresh" type="checkbox" class="accent-primary" />
+            自动刷新
+          </label>
+        </div>
+
+        <!-- 日志区 -->
+        <div class="relative">
+          <div
+            ref="logConsole"
+            class="bg-background p-4 h-[60vh] sm:h-[620px] overflow-y-auto font-mono text-xs
+                   leading-relaxed antialiased"
+            @scroll.passive="handleScroll"
+          >
+            <div
+              v-for="log in filteredLogs"
+              :key="log.seq"
+              class="flex gap-2 py-[1px] hover:bg-muted/40"
+              :class="levelClass(log.level)"
+            >
+              <span v-if="log.ts" class="shrink-0 text-muted-foreground/70">{{ log.ts }}</span>
+              <span class="shrink-0 w-16 font-semibold" :class="levelClass(log.level)">{{ log.level }}</span>
+              <span class="whitespace-pre-wrap break-all min-w-0">{{ log.message }}</span>
+            </div>
+
+            <div v-if="!filteredLogs.length" class="text-muted-foreground text-center py-12">
+              <p v-if="loadingHistory">正在加载历史日志...</p>
+              <p v-else-if="isFiltering">没有匹配的日志行</p>
+              <p v-else-if="isConnected">等待日志输出...</p>
+              <p v-else>暂无日志</p>
+            </div>
           </div>
-          <div v-if="!logs.length" class="text-muted-foreground text-center py-8">
-            <Terminal class="w-12 h-12 mx-auto mb-4 opacity-50" />
-            <p v-if="connecting">正在连接日志流...</p>
-            <p v-else-if="isConnected">等待日志输出...</p>
-            <p v-else>未连接，请点击「连接」按钮</p>
-          </div>
+
+          <!-- 新日志提示：上翻时不强拽回底部，点一下才回最新 -->
+          <button
+            v-if="pendingCount > 0"
+            class="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-primary px-3 py-1.5
+                   text-xs font-medium text-primary-foreground shadow-lg hover:opacity-90"
+            @click="jumpToLatest"
+          >
+            ↓ {{ pendingCount }} 条新日志
+          </button>
         </div>
       </CardContent>
     </Card>

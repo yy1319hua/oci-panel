@@ -5,7 +5,16 @@
 export type { ApiResponse, PageResult, ValueLabel } from './http'
 
 export { sysApi } from './sys'
-export type { SysConfig, LoginResultData, TokenData, WebSocketTicket, AuthStatus, MfaSecret, Glance } from './sys'
+export type {
+  SysConfig,
+  LoginResultData,
+  TokenData,
+  WebSocketTicket,
+  AuthStatus,
+  MfaSecret,
+  Glance,
+  RecentLogs
+} from './sys'
 
 export { passkeyApi } from './passkey'
 export type { PublicKeyOptions, SerializedCredential } from './passkey'
