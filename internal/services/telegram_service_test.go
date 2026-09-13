@@ -206,85 +206,9 @@ func TestSetMyCommandsUsesReverseProxyPath(t *testing.T) {
 	}
 }
 
-// TestSetMenuButtonUsesWebAppWhenURLSet 验证：配置了面板地址时，菜单按钮设为
-// web_app 类型（点击直接打开面板），请求打到 /setChatMenuButton 且 body 正确。
-func TestSetMenuButtonUsesWebAppWhenURLSet(t *testing.T) {
-	var mu sync.Mutex
-	var lastBody map[string]any
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		raw, _ := io.ReadAll(r.Body)
-		var parsed map[string]any
-		_ = json.Unmarshal(raw, &parsed)
-		mu.Lock()
-		lastBody = parsed
-		mu.Unlock()
-		_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
-	}))
-	defer srv.Close()
-
-	svc := &TelegramService{botToken: "123:ABC", apiBase: srv.URL, panelURL: "https://panel.example.com"}
-	svc.setMenuButton()
-
-	mu.Lock()
-	defer mu.Unlock()
-	if lastBody == nil {
-		t.Fatal("未发送 setChatMenuButton 请求")
-	}
-	btn, ok := lastBody["menu_button"].(map[string]any)
-	if !ok {
-		t.Fatalf("缺少 menu_button: %v", lastBody)
-	}
-	if btn["type"] != "web_app" {
-		t.Fatalf("期望 web_app，实际 %v", btn["type"])
-	}
-	webApp, _ := btn["web_app"].(map[string]any)
-	if webApp["url"] != "https://panel.example.com" {
-		t.Fatalf("web_app url 错误: %v", webApp["url"])
-	}
-}
-
-// TestSetMenuButtonFallsBackToCommands 验证：web_app 设置失败（域名未注册）
-// 时，自动降级为 commands 类型，且最终以 commands 收尾。
-func TestSetMenuButtonFallsBackToCommands(t *testing.T) {
-	var mu sync.Mutex
-	var bodies []map[string]any
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		raw, _ := io.ReadAll(r.Body)
-		var parsed map[string]any
-		_ = json.Unmarshal(raw, &parsed)
-		mu.Lock()
-		bodies = append(bodies, parsed)
-		mu.Unlock()
-		btn, _ := parsed["menu_button"].(map[string]any)
-		if btn != nil && btn["type"] == "web_app" {
-			_, _ = w.Write([]byte(`{"ok":false,"description":"can't use the specified URL as a menu button because it's not registered as a Web App"}`))
-			return
-		}
-		_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
-	}))
-	defer srv.Close()
-
-	svc := &TelegramService{botToken: "123:ABC", apiBase: srv.URL, panelURL: "https://panel.example.com"}
-	svc.setMenuButton()
-
-	mu.Lock()
-	defer mu.Unlock()
-	if len(bodies) < 2 {
-		t.Fatalf("期望先试 web_app 再降级 commands，实际请求数 %d", len(bodies))
-	}
-	first, _ := bodies[0]["menu_button"].(map[string]any)
-	if first["type"] != "web_app" {
-		t.Fatalf("第一次应为 web_app，实际 %v", first["type"])
-	}
-	last, _ := bodies[len(bodies)-1]["menu_button"].(map[string]any)
-	if last["type"] != "commands" {
-		t.Fatalf("最终应降级为 commands，实际 %v", last["type"])
-	}
-}
-
-// TestSetMenuButtonUsesCommandsWithoutURL 验证：未配置面板地址时直接设为
-// commands 类型，且只发一次请求。
-func TestSetMenuButtonUsesCommandsWithoutURL(t *testing.T) {
+// TestSetMenuButtonUsesCommands 验证：菜单按钮固定设为 commands 类型（点击弹出命令列表），
+// 且只发一次请求、body 正确。
+func TestSetMenuButtonUsesCommands(t *testing.T) {
 	var mu sync.Mutex
 	var bodies []map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -304,7 +228,7 @@ func TestSetMenuButtonUsesCommandsWithoutURL(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 	if len(bodies) != 1 {
-		t.Fatalf("未配置地址时只应发 1 次请求，实际 %d", len(bodies))
+		t.Fatalf("菜单按钮只应发 1 次请求，实际 %d", len(bodies))
 	}
 	btn, _ := bodies[0]["menu_button"].(map[string]any)
 	if btn["type"] != "commands" {

@@ -8,4 +8,4 @@ package version
 //	go build -ldflags "-X github.com/adiecho/oci-panel/internal/version.AppVersion=$(git describe --tags)" ...
 //
 // 此处的常量是「未注入时的兜底值」，请与最新 tag 保持一致。
-const AppVersion = "1.0.12"
+const AppVersion = "1.0.13"

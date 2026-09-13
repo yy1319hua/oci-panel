@@ -35,7 +35,6 @@ type TelegramService struct {
 	chatID     string
 	enabled    bool
 	apiBase    string
-	panelURL   string // 面板对外地址（config.toml 的 email.public_url），用于菜单按钮打开 Web App
 	ociService *OCIService
 	mu         sync.RWMutex
 	stopChan   chan struct{}
@@ -98,10 +97,9 @@ type InlineKeyboardMarkup struct {
 	InlineKeyboard [][]InlineKeyboardButton `json:"inline_keyboard"`
 }
 
-func NewTelegramService(ociService *OCIService, panelURL string) *TelegramService {
+func NewTelegramService(ociService *OCIService) *TelegramService {
 	ts := &TelegramService{
 		ociService: ociService,
-		panelURL:   strings.TrimSpace(panelURL),
 		stopChan:   make(chan struct{}),
 	}
 	ts.loadConfig()
@@ -575,22 +573,18 @@ func (s *TelegramService) postSetMyCommands(botToken string, commands []map[stri
 // setMenuButton 配置 Telegram 聊天框右下角的「菜单按钮」（Menu Button）。
 //
 // 这是与 / 命令列表（setMyCommands）**完全独立**的机制：命令列表只在输入框输入 / 时
-// 浮现，而菜单按钮是常驻的一个入口，点击即触发。把它设成打开面板 Web App，用户无需
-// 翻命令就能一键进面板，体验远好于纯命令菜单。
+// 浮现，而菜单按钮是常驻的一个入口，点击即弹出命令列表（traffic/cost/...），
+// 让用户无需记忆命令也能用，比纯靠输入 / 更直观。
 //
-// 行为：
-//   - 配置了面板对外地址（public_url）时，优先设为 web_app，点击直接打开面板；
-//   - 若 web_app 设置失败（最常见是该域名未在 BotFather 注册为 Web App，Telegram 返回
-//     "not registered as a Web App"），自动降级为 commands 类型（点击显示命令列表），
-//     保证按钮始终可用、且不会因一次失败而静默卡死；
-//   - 未配置 public_url 时，直接设为 commands 类型。
+// 行为：固定设为 commands 类型（点击弹出命令列表）。不设为打开面板 Web App。
 //
 // Telegram 会缓存菜单按钮，故在「bot 启动」与「配置变更」两个时机都要调用，
-// 否则改了面板地址 / 换了 bot，用户看到的仍是旧按钮。
+// 否则换了 bot，用户看到的仍是旧按钮。菜单按钮同样分作用域：不带 chat_id 是全局默认，
+// 带 chat_id 是会话专属；若旧程序在会话专属作用域设过菜单按钮，全局默认会被它遮蔽，
+// 故全局默认与私聊专属各设一次。
 func (s *TelegramService) setMenuButton() {
 	s.mu.RLock()
 	botToken := s.botToken
-	panelURL := s.panelURL
 	chatID := s.chatID
 	s.mu.RUnlock()
 	if botToken == "" {
@@ -605,45 +599,26 @@ func (s *TelegramService) setMenuButton() {
 		targets = append(targets, id)
 	}
 	for _, chat := range targets {
-		s.applyMenuButton(botToken, panelURL, chat)
+		s.applyMenuButton(botToken, chat)
 	}
 }
 
 // applyMenuButton 在指定作用域（chatID=0 表示全局默认）应用菜单按钮。
 //
-// web_app 优先；失败（最常见是该域名未在 BotFather 注册为 Web App）时降级为
-// commands 类型，保证按钮始终可用、不会因一次失败而静默卡死。
-func (s *TelegramService) applyMenuButton(botToken, panelURL string, chatID int64) {
-	buildBody := func(btn map[string]any) []byte {
-		payload := map[string]any{"menu_button": btn}
-		if chatID != 0 {
-			payload["chat_id"] = chatID
-		}
-		b, _ := json.Marshal(payload)
-		return b
+// 菜单按钮固定设为 commands 类型：点击按钮即弹出命令列表（traffic/cost/...），
+// 让用户无需记忆命令也能用。不设为打开面板 Web App（用户不需要）。
+// 该动作幂等，失败仅记日志，不阻断 bot 启动。
+func (s *TelegramService) applyMenuButton(botToken string, chatID int64) {
+	payload := map[string]any{"menu_button": map[string]any{"type": "commands"}}
+	if chatID != 0 {
+		payload["chat_id"] = chatID
 	}
-
-	// 1) 优先 web_app：点击直接打开面板。
-	if panelURL != "" {
-		webAppBtn := buildBody(map[string]any{
-			"type":    "web_app",
-			"text":    "OCI 面板",
-			"web_app": map[string]string{"url": panelURL},
-		})
-		if s.postMenuButton(botToken, webAppBtn) {
-			log.Printf("Telegram 菜单按钮已设为 Web App（chat=%d，打开面板：%s）", chatID, panelURL)
-			return
-		}
-		log.Printf("Telegram 菜单按钮 web_app 设置失败（域名可能未在 BotFather 注册为 Web App），降级为 commands 类型（chat=%d）", chatID)
-	}
-
-	// 2) 降级 / 默认：commands 类型，点击显示命令列表。
-	cmdBtn := buildBody(map[string]any{"type": "commands"})
-	if s.postMenuButton(botToken, cmdBtn) {
-		log.Printf("Telegram 菜单按钮已设为 commands 类型（chat=%d）", chatID)
+	body, _ := json.Marshal(payload)
+	if s.postMenuButton(botToken, body) {
+		log.Printf("Telegram 菜单按钮已设为 commands 类型（chat=%d），点击弹出命令列表", chatID)
 		return
 	}
-	log.Printf("Telegram 菜单按钮设置失败：commands 降级也失败（chat=%d）", chatID)
+	log.Printf("Telegram 菜单按钮设置失败（chat=%d）", chatID)
 }
 
 // postMenuButton 向 setChatMenuButton 发送一次性请求，返回是否成功（ok=true）。
