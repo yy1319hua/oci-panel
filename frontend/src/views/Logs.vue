@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, shallowRef, onUnmounted, nextTick } from 'vue'
+import { ref, shallowRef, onMounted, onUnmounted, nextTick } from 'vue'
 import { Wifi, WifiOff, Trash2, Terminal } from 'lucide-vue-next'
 import { toast } from '@/composables/useToast'
 import { useAuthStore } from '@/stores/auth'
@@ -20,11 +20,16 @@ const ws = shallowRef<WebSocket | null>(null)
 const connecting = ref(false)
 const logConsole = ref<HTMLElement>()
 let disposed = false
-let connectionAttempt = 0
+let manualClose = false // 用户主动断开后不再自动重连
+let socketSeq = 0 // 当前有效 socket 序号，用于作废过期回调
+let retries = 0 // 自动重连次数
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 
 // 日志缓冲上限：实时日志流可能无限增长，超过上限后丢弃最旧的条目，
 // 避免 DOM 节点与内存无界膨胀导致页面卡顿。
 const MAX_LOG_ENTRIES = 1000
+const MAX_RETRIES = 12
+const RECONNECT_DELAY = 3000
 
 const addLog = (message: string, type: LogEntry['type'] = 'info') => {
   const timestamp = new Date().toLocaleTimeString('zh-CN')
@@ -43,9 +48,32 @@ const addLog = (message: string, type: LogEntry['type'] = 'info') => {
   })
 }
 
+const clearReconnect = () => {
+  if (reconnectTimer !== null) {
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
+  }
+}
+
+const scheduleReconnect = () => {
+  if (disposed || manualClose || retries >= MAX_RETRIES) {
+    if (retries >= MAX_RETRIES) {
+      addLog('日志流重连次数过多，已停止自动重连，请手动点击「连接」', 'error')
+    }
+    return
+  }
+  clearReconnect()
+  reconnectTimer = setTimeout(() => {
+    retries++
+    addLog(`正在尝试重新连接日志流（第 ${retries} 次）...`, 'warning')
+    connectWebSocket()
+  }, RECONNECT_DELAY)
+}
+
 const connectWebSocket = async () => {
-  if (disposed || ws.value || connecting.value) return
-  const attempt = ++connectionAttempt
+  if (disposed || manualClose) return
+  if (ws.value || connecting.value) return
+  const seq = ++socketSeq
   connecting.value = true
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
 
@@ -55,46 +83,53 @@ const connectWebSocket = async () => {
       return
     }
     const ticketResponse = await sysApi.issueWebSocketTicket()
-    if (disposed || attempt !== connectionAttempt) return
+    if (disposed || seq !== socketSeq || manualClose) return
     const wsUrl = `${protocol}//${window.location.host}/ws/logs?ticket=${encodeURIComponent(ticketResponse.data.ticket)}`
     const socket = new WebSocket(wsUrl)
     ws.value = socket
 
     socket.onopen = () => {
-      if (ws.value !== socket) return
+      if (seq !== socketSeq || ws.value !== socket) return
       connecting.value = false
       isConnected.value = true
+      retries = 0
       addLog('WebSocket 连接成功', 'success')
       toast.success('日志连接成功')
     }
 
     socket.onmessage = event => {
-      if (ws.value !== socket) return
+      if (seq !== socketSeq || ws.value !== socket) return
       addLog(event.data, 'info')
     }
 
     socket.onerror = () => {
-      if (ws.value !== socket) return
+      if (seq !== socketSeq || ws.value !== socket) return
       addLog('WebSocket 连接错误', 'error')
-      toast.error('WebSocket连接错误')
     }
 
     socket.onclose = () => {
-      if (ws.value !== socket) return
+      if (seq !== socketSeq) return
       ws.value = null
       connecting.value = false
       isConnected.value = false
       addLog('WebSocket 连接已断开', 'warning')
+      // 非主动断开则自动重连，保证日志持续显示
+      if (!manualClose && !disposed) scheduleReconnect()
     }
   } catch {
-    if (!disposed && attempt === connectionAttempt) toast.error('无法建立WebSocket连接')
+    if (!disposed && seq === socketSeq && !manualClose) {
+      toast.error('无法建立WebSocket连接')
+      scheduleReconnect()
+    }
   } finally {
-    if (attempt === connectionAttempt && !ws.value) connecting.value = false
+    if (seq === socketSeq && !ws.value) connecting.value = false
   }
 }
 
-const disconnectWebSocket = () => {
-  connectionAttempt++
+const disconnectWebSocket = (manual = false) => {
+  manualClose = manual
+  clearReconnect()
+  socketSeq++ // 作废当前 socket 的所有回调
   connecting.value = false
   isConnected.value = false
   const socket = ws.value
@@ -111,9 +146,11 @@ const disconnectWebSocket = () => {
 
 const toggleConnection = () => {
   if (ws.value || connecting.value) {
-    disconnectWebSocket()
+    disconnectWebSocket(true)
     toast.info('已断开连接')
   } else {
+    manualClose = false
+    retries = 0
     connectWebSocket()
   }
 }
@@ -136,9 +173,17 @@ const getLogColor = (type: LogEntry['type']) => {
   }
 }
 
+onMounted(() => {
+  // 进入页面即自动连接，直接显示日志，无需手动点击「连接」；
+  // 切走再回来也会重新挂载并自动重连，不再需要手动操作。
+  manualClose = false
+  connectWebSocket()
+})
+
 onUnmounted(() => {
   disposed = true
-  disconnectWebSocket()
+  clearReconnect()
+  disconnectWebSocket(false)
 })
 </script>
 
@@ -164,7 +209,7 @@ onUnmounted(() => {
               :class="isConnected ? 'bg-success' : 'bg-muted-foreground'"
             />
           </span>
-          {{ isConnected ? '已连接' : '未连接' }}
+          {{ isConnected ? '已连接' : (connecting ? '连接中' : '未连接') }}
         </Badge>
       </div>
       <div class="flex gap-2">
@@ -200,7 +245,9 @@ onUnmounted(() => {
           </div>
           <div v-if="!logs.length" class="text-muted-foreground text-center py-8">
             <Terminal class="w-12 h-12 mx-auto mb-4 opacity-50" />
-            <p>{{ isConnected ? '等待日志输出...' : '未连接，请点击"连接"按钮' }}</p>
+            <p v-if="connecting">正在连接日志流...</p>
+            <p v-else-if="isConnected">等待日志输出...</p>
+            <p v-else>未连接，请点击「连接」按钮</p>
           </div>
         </div>
       </CardContent>
