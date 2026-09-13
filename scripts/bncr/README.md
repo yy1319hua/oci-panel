@@ -9,6 +9,9 @@
 1. 把 `oci-panel.js` 复制到 Bncr 的 `plugins/` 目录
 2. 重启 Bncr（或热重载插件）
 
+> ⚠️ **改名时务必同步**：Bncr 要求插件元数据里的 `@name` 必须与**文件名（去掉 `.js` 后缀）完全一致**，否则插件无法被正确识别。
+> 例如文件叫 `oci-panel.js`，则注解必须写 `@name oci-panel`；若改成 `OCI面板查询.js`，`@name` 也要同步改成 `OCI面板查询`。
+
 ## 配置
 
 在 Bncr Web 管理面板 → 插件配置中填写：

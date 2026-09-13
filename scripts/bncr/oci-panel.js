@@ -1,6 +1,6 @@
 /**
  * @author      yy1319hua
- * @name        OCI 面板查询
+ * @name        oci-panel
  * @team        oci-panel
  * @version     1.0.0
  * @description 调用 oci-panel 开放 API 查询甲骨文实例状态、流量、成本。平台无关：QQ / 微信 / Telegram 均可触发。
