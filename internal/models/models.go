@@ -179,48 +179,6 @@ func (OciUser) TableName() string {
 	return "oci_user"
 }
 
-type OciKv struct {
-	ID         string    `gorm:"primaryKey;column:id" json:"id"`
-	Code       string    `gorm:"column:code;not null" json:"code"`
-	Value      string    `gorm:"column:value;type:text" json:"value"`
-	Type       string    `gorm:"column:type;not null" json:"type"`
-	CreateTime time.Time `gorm:"column:create_time;autoCreateTime" json:"createTime"`
-}
-
-func (OciKv) TableName() string {
-	return "oci_kv"
-}
-
-type CfCfg struct {
-	ID         string    `gorm:"primaryKey;column:id" json:"id"`
-	Domain     string    `gorm:"column:domain;not null" json:"domain"`
-	ZoneID     string    `gorm:"column:zone_id;not null" json:"zoneId"`
-	APIToken   string    `gorm:"column:api_token;not null" json:"apiToken"`
-	CreateTime time.Time `gorm:"column:create_time;autoCreateTime" json:"createTime"`
-}
-
-func (CfCfg) TableName() string {
-	return "cf_cfg"
-}
-
-type IpData struct {
-	ID         string    `gorm:"primaryKey;column:id" json:"id"`
-	IP         string    `gorm:"column:ip;not null" json:"ip"`
-	Country    string    `gorm:"column:country" json:"country"`
-	Area       string    `gorm:"column:area" json:"area"`
-	City       string    `gorm:"column:city" json:"city"`
-	Org        string    `gorm:"column:org" json:"org"`
-	Asn        string    `gorm:"column:asn" json:"asn"`
-	Type       string    `gorm:"column:type" json:"type"`
-	Lat        float64   `gorm:"column:lat" json:"lat"`
-	Lng        float64   `gorm:"column:lng" json:"lng"`
-	CreateTime time.Time `gorm:"column:create_time;autoCreateTime" json:"createTime"`
-}
-
-func (IpData) TableName() string {
-	return "ip_data"
-}
-
 // SysSetting 系统设置表
 type SysSetting struct {
 	ID    string `gorm:"primaryKey;column:id" json:"id"`
@@ -234,14 +192,14 @@ func (SysSetting) TableName() string {
 
 // OciConfigCache 配置缓存表
 type OciConfigCache struct {
-	ID               string    `gorm:"primaryKey;column:id" json:"id"`
-	ConfigID         string    `gorm:"column:config_id;uniqueIndex;not null" json:"configId"`
-	InstanceCount    int       `gorm:"column:instance_count;default:0" json:"instanceCount"`
-	RunningInstances int       `gorm:"column:running_instances;default:0" json:"runningInstances"`
-	InstancesData    string    `gorm:"column:instances_data;type:text" json:"instancesData"`
-	VolumesData      string    `gorm:"column:volumes_data;type:text" json:"volumesData"`
-	VcnsData         string    `gorm:"column:vcns_data;type:text" json:"vcnsData"`
-	TenantData       string    `gorm:"column:tenant_data;type:text" json:"tenantData"`
+	ID               string `gorm:"primaryKey;column:id" json:"id"`
+	ConfigID         string `gorm:"column:config_id;uniqueIndex;not null" json:"configId"`
+	InstanceCount    int    `gorm:"column:instance_count;default:0" json:"instanceCount"`
+	RunningInstances int    `gorm:"column:running_instances;default:0" json:"runningInstances"`
+	InstancesData    string `gorm:"column:instances_data;type:text" json:"instancesData"`
+	VolumesData      string `gorm:"column:volumes_data;type:text" json:"volumesData"`
+	VcnsData         string `gorm:"column:vcns_data;type:text" json:"vcnsData"`
+	TenantData       string `gorm:"column:tenant_data;type:text" json:"tenantData"`
 	// TrafficData 缓存账号级月度流量统计（JSON），避免首页每次实时查询 OCI（约 10s）。
 	TrafficData string `gorm:"column:traffic_data;type:text" json:"trafficData"`
 	// TrafficUpdateTime 流量数据的独立时间戳。流量查询成本远高于其他项，
@@ -294,9 +252,6 @@ func ErrorResponse(code int, message string) ResponseData {
 func AutoMigrate(db *gorm.DB) error {
 	return db.AutoMigrate(
 		&OciUser{},
-		&OciKv{},
-		&CfCfg{},
-		&IpData{},
 		&SysSetting{},
 		&OciConfigCache{},
 		&OciImageCache{},
