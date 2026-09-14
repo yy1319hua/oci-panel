@@ -2,7 +2,7 @@
  * @author yy1319hua
  * @name oci-daily-report
  * @team oci-panel
- * @version 1.3.0
+ * @version 1.4.0
  * @description 每天定时把 oci-panel 的成本与流量汇总推送到微信等渠道。平台无关：QQ / 微信 / Telegram 均可。
  * @rule ^oci\s+日报$
  * @rule ^oci\s+日报\s+(\S+)$
@@ -151,6 +151,13 @@ function today() {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
+/** 当前时分，放在日报结尾，一眼看出是哪次推送 */
+function nowHM() {
+  const d = new Date();
+  const p = n => String(n).padStart(2, '0');
+  return `${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 /** Token 脱敏：只留前 6 位 + 长度，便于排查又不泄露 */
 const maskToken = t => (!t ? '(空)' : `${String(t).slice(0, 6)}…（共 ${String(t).length} 位）`);
 
@@ -191,9 +198,25 @@ async function api(path, options = {}) {
  * 日报正文
  * ============================================================ */
 
+/** 金额：0 就别写 0.0000，有花费才给 4 位小数 */
+function fmtAmt(n) {
+  const v = Number(n) || 0;
+  return v === 0 ? '0' : v.toFixed(4);
+}
+
+/** 用量进度条，12 格；有用量时至少亮 1 格，免得看着像没数据 */
+function bar(pct) {
+  const w = 12;
+  let filled = Math.round((Math.min(Math.max(pct, 0), 100) / 100) * w);
+  if (pct > 0 && filled === 0) filled = 1;
+  return '▓'.repeat(filled) + '░'.repeat(w - filled);
+}
+
 /** 单个配置的「成本 + 流量」小节 */
-async function renderOne(cfg) {
-  const lines = [`👤 ${cfg.username || '(未命名)'}${cfg.region ? '　📍 ' + cfg.region : ''}`];
+async function renderOne(cfg, idx, total) {
+  // 多配置时带序号，免得几个账号糊成一片
+  const tag = total > 1 ? `【${idx}/${total}】` : '';
+  const lines = [`▎${tag}${cfg.username || '(未命名)'}${cfg.region ? ' · ' + cfg.region : ''}`];
 
   // ---- 成本 ----
   try {
@@ -202,19 +225,17 @@ async function renderOne(cfg) {
       body: { configId: cfg.id, days: 30 }
     });
     const cur = cost.currency || '';
-    lines.push(`💵 本月累计：${(cost.monthToDate || 0).toFixed(4)} ${cur}`);
+    const mtd = Number(cost.monthToDate) || 0;
+    lines.push(`💰 本月 ${fmtAmt(mtd)} ${cur}${mtd === 0 ? ' · 免费额度内 ✅' : ''}`.trimEnd());
 
     // 只列最近 3 天有花费的，日报没必要铺满 30 行
     const charged = (cost.days || []).filter(x => Number(x.amount) > 0);
-    if (charged.length) {
-      for (const x of charged.slice(0, 3)) {
-        lines.push(`　· ${x.date}　${Number(x.amount).toFixed(4)} ${x.currency || cur}`);
-      }
-    } else {
-      lines.push('　✅ 近期无费用，均在免费额度内');
+    for (const x of charged.slice(0, 3)) {
+      // 日期去掉年份，2026-09-14 → 09-14
+      lines.push(`　· ${String(x.date).slice(5)}　${fmtAmt(x.amount)} ${x.currency || cur}`);
     }
   } catch (e) {
-    lines.push(`💵 成本：查询失败（${e.message}）`);
+    lines.push(`💰 成本：查询失败（${e.message}）`);
   }
 
   // ---- 流量 ----
@@ -228,11 +249,20 @@ async function renderOne(cfg) {
     const out = t.outboundTraffic || 0;
     const free = t.freeAllowance || 0;
     const pct = free > 0 ? (out / free) * 100 : 0;
-    lines.push(`📊 出站已用：${fmtBytes(out)} / ${fmtBytes(free)}（${pct.toFixed(2)}%）`);
-    lines.push(`　↑ 出站 ${fmtBytes(out)}　↓ 入站 ${fmtBytes(t.inboundTraffic)}`);
-    if (t.billableTraffic > 0) {
-      lines.push(`　⚠️ 超额计费流量：${fmtBytes(t.billableTraffic)}`);
+
+    if (free > 0) {
+      lines.push(`📊 出站 ${fmtBytes(out)} / ${fmtBytes(free)}`);
+      const left = free - out;
+      const leftTxt = left >= 0 ? `剩余 ${fmtBytes(left)}` : `已超额 ${fmtBytes(-left)} ⚠️`;
+      lines.push(`　${pct.toFixed(2)}% ${bar(pct)} ${leftTxt}`);
+    } else {
+      lines.push(`📊 出站 ${fmtBytes(out)}`);
     }
+    // 入站永远免费，标出来免得被误当成额度消耗
+    lines.push(`　↓ 入站 ${fmtBytes(t.inboundTraffic)}（免费）`);
+
+    if (pct >= 80) lines.push(`　⚠️ 已用 ${pct.toFixed(1)}%，接近免费额度上限`);
+    if (t.billableTraffic > 0) lines.push(`　⚠️ 超额计费 ${fmtBytes(t.billableTraffic)}`);
   } catch (e) {
     lines.push(`📊 流量：查询失败（${e.message}）`);
   }
@@ -252,20 +282,30 @@ async function buildReport(onlyId) {
     if (!list.length) return `❌ 找不到配置ID：${onlyId}\n可发送「oci 配置」查看所有ID`;
   }
 
-  const head = [
-    `📅 OCI 日报 · ${today()}`,
-    `━━━━━━━━━━━━━━━`,
-    `实例 ${summary.totalInstances} 台，运行中 ${summary.runningInstances} 台`,
-    ''
-  ];
+  const total = summary.totalInstances || 0;
+  const running = summary.runningInstances || 0;
+  // 全在跑就没必要重复两个数，有停机的才把明细摆出来
+  const statusLine = total === running
+    ? `🖥 实例 ${total} 台 · 全部运行中`
+    : `🖥 实例 ${total} 台 · ${running} 运行中 / ${total - running} 已停止 ⚠️`;
 
   // 串行查询：并发打 OCI 接口容易被限流，且流量接口本身较慢
   const parts = [];
+  let i = 0;
   for (const cfg of list) {
-    parts.push(await renderOne(cfg));
+    i++;
+    parts.push(await renderOne(cfg, i, list.length));
   }
 
-  return head.join('\n') + parts.join('') + `—— 由 oci-panel 定时推送`;
+  return [
+    `📅 OCI 日报 · ${today()}`,
+    `━━━━━━━━━━━━━━━`,
+    statusLine,
+    '',
+    ...parts,
+    `━━━━━━━━━━━━━━━`,
+    `🕘 ${nowHM()} · oci-panel`
+  ].join('\n');
 }
 
 /* ============================================================
