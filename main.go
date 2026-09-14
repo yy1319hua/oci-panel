@@ -31,6 +31,10 @@ func main() {
 		log.Fatalf("Failed to seed admin user: %v", err)
 	}
 
+	// 启动时清理 keys 目录中不再被任何配置引用的孤儿私钥。
+	// 注意放在 router.Setup 之前：此时局部变量 services 尚未声明，不会遮蔽包名。
+	go services.CleanupOrphanKeys()
+
 	r := gin.Default()
 	services := router.Setup(r, cfg)
 

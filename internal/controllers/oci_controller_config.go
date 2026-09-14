@@ -11,6 +11,7 @@ import (
 
 	"github.com/adiecho/oci-panel/internal/database"
 	"github.com/adiecho/oci-panel/internal/models"
+	"github.com/adiecho/oci-panel/internal/services"
 	"github.com/adiecho/oci-panel/internal/util"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -268,6 +269,10 @@ func (oc *OciController) RemoveCfg(c *gin.Context) {
 	for _, user := range users {
 		oc.ociService.InvalidateClientCache(user.ID)
 	}
+
+	// 配置删除后，其私钥可能已无任何引用（例如同一密钥被多次上传）。
+	// 兜底清理一次孤儿密钥，避免敏感文件长期留在磁盘上。
+	go services.CleanupOrphanKeys()
 
 	c.JSON(http.StatusOK, models.SuccessResponse(nil, "Deleted successfully"))
 }
