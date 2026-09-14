@@ -203,8 +203,7 @@ async function api(path, options = {}) {
     });
 
     if (res.status === 401) throw new Error('Token 无效或已过期，请到面板重新生成');
-    if (res.status === 403)
-      throw new Error('权限不足：该接口需要 full 权限的 Token（readonly 仅允许 GET）');
+    if (res.status === 403) throw new Error('权限不足：当前 Token 不允许调用该接口');
 
     const json = await res.json();
     // 业务层错误：响应信封是 {code, message, data}，成功码是 200（不是 0）

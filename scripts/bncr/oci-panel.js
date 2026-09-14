@@ -27,7 +27,7 @@ const ConfigDB = new BncrPluginConfig(
       .setDefault(''),
     apiToken: BncrCreateSchema.string()
       .setTitle('API Token')
-      .setDescription('面板 → 系统设置 → API Token 生成。查流量/成本需要 full 权限，readonly 只能查状态')
+      .setDescription('面板 → 系统设置 → API Token 生成。建议设置过期时间')
       .setDefault(''),
     configId: BncrCreateSchema.string()
       .setTitle('默认配置ID')
@@ -88,9 +88,8 @@ async function api(path, options = {}) {
 
     // 401：Token 无效或过期
     if (res.status === 401) throw new Error('Token 无效或已过期，请到面板重新生成');
-    // 403：readonly token 调用 POST 接口
-    if (res.status === 403)
-      throw new Error('权限不足：该接口需要 full 权限的 Token（readonly 仅允许 GET）');
+    // 403：Token 无权调用该接口
+    if (res.status === 403) throw new Error('权限不足：当前 Token 不允许调用该接口');
 
     const json = await res.json();
     // 业务层错误：响应信封为 {code, message, data}，成功码是 200（不是 0）
@@ -251,10 +250,7 @@ oci 帮助 —— 显示本说明
 
 ━━━━━━━━━━━━━━━
 提示：流量和成本可跟配置ID，例如
-「oci 流量 abc123」；不填则用插件配置里的默认ID。
-
-⚠️ 若提示权限不足，说明 Token 是
-readonly，到面板换成 full 权限即可。`;
+「oci 流量 abc123」；不填则用插件配置里的默认ID。`;
 
 /* ============================================================
  * 主入口

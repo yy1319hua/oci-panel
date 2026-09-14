@@ -39,17 +39,6 @@
 
 流量和成本支持追加配置 ID，例如 `oci 流量 abc123`；不填则用插件配置里的默认 ID。
 
-## ⚠️ Token 权限注意
-
-面板的 API Token 分两种 scope：
-
-- `readonly` —— 仅允许 GET，**只能查状态**
-- `full` —— 可用 POST，查流量 / 成本需要它
-
-因为 `/api/oci/traffic/monthly` 与 `/api/oci/traffic/cost` 是 POST 端点，用 readonly Token 调用会返回 403，此时脚本会提示「需要 full 权限的 Token」。
-
-脚本不做任何写操作，因此即便使用 full Token 也不会误触开关机；唯一风险是 Token 泄露，建议设置过期时间。
-
 ## 调用的 API
 
 | 端点 | 方法 | 用途 |
