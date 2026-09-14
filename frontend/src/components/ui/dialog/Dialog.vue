@@ -37,7 +37,7 @@ watch(
       enter-from-class="opacity-0"
       leave-to-class="opacity-0"
     >
-      <div v-if="open" class="fixed inset-0 z-50 flex items-center justify-center">
+      <div v-if="open" class="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div class="fixed inset-0 bg-black/80 backdrop-blur-sm" @click="close" />
         <Transition
           enter-active-class="transition-all duration-300"

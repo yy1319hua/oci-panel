@@ -26,6 +26,7 @@ const authStore = useAuthStore()
 
 const sidebarOpen = ref(false)
 const currentTime = ref('')
+const clockShort = ref('')
 
 const navItems = [
   { path: '/', label: '概览', icon: LayoutDashboard },
@@ -44,6 +45,11 @@ const updateTime = () => {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit'
+  })
+  // 手机端顶栏窄，只显示「时:分」，省掉秒避免拥挤
+  clockShort.value = now.toLocaleString('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit'
   })
 }
 
@@ -212,7 +218,8 @@ const isActivePath = (path: string) => {
         <div class="flex items-center gap-4">
           <div class="flex items-center gap-2 text-sm text-muted-foreground">
             <Clock class="w-4 h-4" />
-            <span class="font-mono">{{ currentTime }}</span>
+            <span class="font-mono hidden sm:inline">{{ currentTime }}</span>
+            <span class="font-mono sm:hidden">{{ clockShort }}</span>
           </div>
         </div>
       </header>

@@ -177,6 +177,15 @@
   .slide-in-from-right {
     animation-name: slide-in-from-right;
   }
+
+  /* 移动端横向滚动标签条等场景隐藏滚动条，但保留可滚动能力 */
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 .data-table-row {

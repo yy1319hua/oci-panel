@@ -209,7 +209,7 @@ const copyOne = async (e: ApiEndpoint) => {
     <div class="max-w-5xl mx-auto p-4 sm:p-6 space-y-6">
     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
       <div>
-        <h1 class="text-3xl font-display font-bold">API 文档</h1>
+        <h1 class="text-2xl sm:text-3xl font-display font-bold">API 文档</h1>
         <p class="text-muted-foreground mt-1">供机器人 / AI 对接面板接口使用</p>
       </div>
       <Button @click="copyAll">

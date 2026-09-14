@@ -255,7 +255,7 @@ onMounted(() => {
   <div class="space-y-8">
     <!-- Header -->
     <div v-motion :initial="{ opacity: 0, y: -20 }" :enter="{ opacity: 1, y: 0 }">
-      <h1 class="text-3xl font-display font-bold">系统概览</h1>
+      <h1 class="text-2xl sm:text-3xl font-display font-bold">系统概览</h1>
       <p class="text-muted-foreground mt-1">欢迎回来，这是你的云资源状态</p>
     </div>
 
@@ -389,20 +389,34 @@ onMounted(() => {
 
           <!-- 每实例占比 -->
           <div v-if="traffic.instances.length" class="mt-4 space-y-3">
-            <div
-              v-for="inst in traffic.instances"
-              :key="inst.id"
-              class="grid grid-cols-[120px_1fr_120px] items-center gap-3 text-sm"
-            >
-              <div class="flex items-center gap-2 min-w-0">
-                <span class="w-2.5 h-2.5 rounded-full shrink-0" :style="{ background: inst.color }"></span>
-                <span class="truncate text-foreground/90">{{ inst.name }}</span>
+            <div v-for="inst in traffic.instances" :key="inst.id" class="text-sm">
+              <!-- 手机端：名称+数值一行，进度条整行铺满 -->
+              <div class="lg:hidden">
+                <div class="flex items-center justify-between gap-3">
+                  <div class="flex items-center gap-2 min-w-0">
+                    <span class="w-2.5 h-2.5 rounded-full shrink-0" :style="{ background: inst.color }"></span>
+                    <span class="truncate text-foreground/90">{{ inst.name }}</span>
+                  </div>
+                  <span class="shrink-0 text-muted-foreground tabular-nums">
+                    {{ formatBytes(inst.total).value }} {{ formatBytes(inst.total).unit }} · {{ inst.pct }}%
+                  </span>
+                </div>
+                <div class="h-2 rounded-full bg-slate-800 overflow-hidden mt-1.5">
+                  <div class="h-full rounded-full" :style="{ width: inst.pct + '%', background: inst.color }"></div>
+                </div>
               </div>
-              <div class="h-2 rounded-full bg-slate-800 overflow-hidden">
-                <div class="h-full rounded-full" :style="{ width: inst.pct + '%', background: inst.color }"></div>
-              </div>
-              <div class="text-right text-muted-foreground tabular-nums">
-                {{ formatBytes(inst.total).value }} {{ formatBytes(inst.total).unit }} · {{ inst.pct }}%
+              <!-- 桌面端：保留原三列对齐 -->
+              <div class="hidden lg:grid lg:grid-cols-[160px_1fr_auto] lg:items-center lg:gap-3">
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="w-2.5 h-2.5 rounded-full shrink-0" :style="{ background: inst.color }"></span>
+                  <span class="truncate text-foreground/90">{{ inst.name }}</span>
+                </div>
+                <div class="h-2 rounded-full bg-slate-800 overflow-hidden">
+                  <div class="h-full rounded-full" :style="{ width: inst.pct + '%', background: inst.color }"></div>
+                </div>
+                <div class="text-right text-muted-foreground tabular-nums">
+                  {{ formatBytes(inst.total).value }} {{ formatBytes(inst.total).unit }} · {{ inst.pct }}%
+                </div>
               </div>
             </div>
           </div>

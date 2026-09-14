@@ -549,7 +549,7 @@ const systemInfo = computed(() => [
   <div class="space-y-6">
     <!-- Header -->
     <div v-motion :initial="{ opacity: 0, y: -20 }" :enter="{ opacity: 1, y: 0 }">
-      <h1 class="text-3xl font-display font-bold">系统设置</h1>
+      <h1 class="text-2xl sm:text-3xl font-display font-bold">系统设置</h1>
       <p class="text-muted-foreground mt-1">管理系统配置和查看系统信息</p>
     </div>
 

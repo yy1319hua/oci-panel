@@ -206,7 +206,7 @@ useMotion(headerRef, { initial: { opacity: 0, y: -20 }, enter: { opacity: 1, y: 
     <!-- Header -->
     <div ref="headerRef" class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
       <div class="flex items-center gap-4">
-        <h1 class="text-3xl font-display font-bold">配置管理</h1>
+        <h1 class="text-2xl sm:text-3xl font-display font-bold">配置管理</h1>
         <Badge v-if="selectedConfigIds.length > 0" variant="secondary">已选择 {{ selectedConfigIds.length }} 项</Badge>
       </div>
       <div class="flex gap-2">

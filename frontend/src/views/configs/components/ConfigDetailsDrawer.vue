@@ -462,13 +462,13 @@ const openSecurityList = (vcn: any) => {
             </div>
             <div v-else-if="configDetails" class="space-y-6">
               <!-- Tabs -->
-              <div class="flex items-center justify-between flex-wrap gap-4">
-                <div class="flex gap-1 p-1 bg-muted/50 rounded-lg flex-wrap">
+              <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div class="flex gap-1 p-1 bg-muted/50 rounded-lg overflow-x-auto no-scrollbar flex-nowrap lg:flex-wrap lg:overflow-visible">
                   <button
                     v-for="tab in tabs"
                     :key="tab.key"
                     :class="[
-                      'flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all',
+                      'flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all whitespace-nowrap shrink-0',
                       activeTab === tab.key
                         ? 'bg-primary text-primary-foreground shadow-sm'
                         : 'text-muted-foreground hover:text-foreground hover:bg-muted'
@@ -479,7 +479,7 @@ const openSecurityList = (vcn: any) => {
                     {{ tab.label }}
                   </button>
                 </div>
-                <Button variant="outline" size="sm" :disabled="loadingTab" @click="refreshCurrentTab">
+                <Button variant="outline" size="sm" class="shrink-0 self-start lg:self-auto" :disabled="loadingTab" @click="refreshCurrentTab">
                   <RefreshCw :class="['w-4 h-4', loadingTab && 'animate-spin']" />
                   刷新
                 </Button>

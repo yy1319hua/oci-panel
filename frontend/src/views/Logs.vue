@@ -484,7 +484,7 @@ onUnmounted(() => {
     <!-- Header -->
     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
       <div class="flex items-center gap-3 flex-wrap">
-        <h1 class="text-3xl font-display font-bold">面板日志</h1>
+        <h1 class="text-2xl sm:text-3xl font-display font-bold">面板日志</h1>
         <span class="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
           <span class="relative flex h-2 w-2">
             <span
