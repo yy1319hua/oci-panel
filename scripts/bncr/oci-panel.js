@@ -23,7 +23,7 @@ const ConfigDB = new BncrPluginConfig(
   BncrCreateSchema.object({
     panelUrl: BncrCreateSchema.string()
       .setTitle('面板地址')
-      .setDescription('例如 https://oci.158088.xyz，结尾不要带斜杠')
+      .setDescription('例如 https://你的面板域名，结尾不要带斜杠')
       .setDefault(''),
     apiToken: BncrCreateSchema.string()
       .setTitle('API Token')
@@ -93,8 +93,8 @@ async function api(path, options = {}) {
       throw new Error('权限不足：该接口需要 full 权限的 Token（readonly 仅允许 GET）');
 
     const json = await res.json();
-    // 业务层错误：{code: 非0, message}
-    if (json.code !== 0) throw new Error(json.message || `接口返回 code=${json.code}`);
+    // 业务层错误：响应信封为 {code, message, data}，成功码是 200（不是 0）
+    if (json.code !== 200) throw new Error(json.message || `接口返回 code=${json.code}`);
     return json.data;
   } catch (e) {
     if (e.name === 'AbortError') throw new Error(`请求超时（${timeout || 30}s），可尝试调大超时时间`);
@@ -176,13 +176,6 @@ async function renderTraffic(arg) {
     ''
   ];
 
-  if (d.instances?.length) {
-    lines.push('按实例拆分：');
-    for (const i of d.instances) {
-      lines.push(`• ${i.name || i.instanceName || '(未命名)'}`);
-      lines.push(`　↓ ${fmtBytes(i.inboundTraffic)}　↑ ${fmtBytes(i.outboundTraffic)}`);
-    }
-  }
   return lines.join('\n');
 }
 
@@ -257,7 +250,7 @@ module.exports = async s => {
   // 配置未填写：给出明确引导，而不是抛一堆栈
   if (!panelUrl || !apiToken) {
     return await s.reply(
-      '❌ 插件尚未配置\n请在 Bncr 管理面板 → 插件配置中填写：\n1. 面板地址（如 https://oci.158088.xyz）\n2. API Token（面板系统设置里生成）'
+      '❌ 插件尚未配置\n请在 Bncr 管理面板 → 插件配置中填写：\n1. 面板地址（如 https://你的面板域名）\n2. API Token（面板系统设置里生成）'
     );
   }
 
