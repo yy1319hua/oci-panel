@@ -158,10 +158,12 @@ const statusClass = (code: number) =>
 
 // 调用记录拼成「一行一条」的纯文本行，风格与实时日志页保持一致：
 // 2026-09-15 03:58:28 [API] GET /api/configs/list → 200 ip=1.2.3.4
-// 拆成 head/tail 两段是为了让状态码单独着色；段间空格由模板换行折叠产生，
-// 因此这里头尾不再留空格，避免出现双空格。
-const callHead = (c: TokenCallLog) => `${formatTime(c.createdAt)} [API] ${c.method} ${c.path} →`
-const callTail = (c: TokenCallLog) => `ip=${c.ip || '—'}`
+// 拆成 head/tail 两段是为了让状态码单独着色。
+// 【坑】Vue 会移除模板里标签之间的换行空白（是删除不是折叠），所以段间空格
+// 必须写进这里的字符串（head 尾空格、tail 前导空格），容器再用 pre-wrap 保留，
+// 否则会渲染成「→200ip=」。
+const callHead = (c: TokenCallLog) => `${formatTime(c.createdAt)} [API] ${c.method} ${c.path} → `
+const callTail = (c: TokenCallLog) => ` ip=${c.ip || '—'}`
 
 // 按调用次数排序展示（调用多的令牌排前面更直观）
 const sortedTokens = computed(() =>
@@ -1230,7 +1232,7 @@ const systemInfo = computed(() => [
             <div
               v-for="call in tokenCalls"
               :key="call.id"
-              class="py-2 font-mono text-xs leading-relaxed hover:bg-muted/40 break-words"
+              class="py-2 font-mono text-xs leading-relaxed hover:bg-muted/40 whitespace-pre-wrap break-words"
             >
               <span class="text-foreground/80">{{ callHead(call) }}</span>
               <span :class="statusClass(call.statusCode)">{{ call.statusCode }}</span>

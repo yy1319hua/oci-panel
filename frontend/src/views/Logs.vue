@@ -452,6 +452,14 @@ const levelClass = (level: LogLevel) => {
   }
 }
 
+// 日志行拆成「时间戳」「级别+正文」两段，仅仅是为了让时间戳保持灰色。
+// 【坑】Vue 模板默认会移除标签之间的换行空白（condense 模式，是删除不是折叠），
+// 所以段间空格不能靠模板换行产生，必须写进数据里；同时容器要用
+// whitespace-pre-wrap，否则这些空格会被 HTML 折叠掉，渲染成 04:54:51INFOTelegram。
+// padEnd(8) 用来对齐级别列（最长 SUCCESS 占 7 字符，+1 保证至少空一格）。
+const logHead = (l: LogEntry) => `${l.ts} `
+const logTail = (l: LogEntry) => `${l.level.padEnd(8)}${l.message}`
+
 // 自动刷新关闭时，正在上翻的用户不应被新日志打扰；
 // 打开时若已停在底部，则立刻滚到最新。
 watch(autoRefresh, enabled => {
@@ -562,18 +570,16 @@ onUnmounted(() => {
                    leading-relaxed antialiased"
             @scroll.passive="handleScroll"
           >
-            <!-- 不用 flex：改成普通文本流，时间戳/级别/正文连续排成一整行，
-                 宽度不够时整条日志自然折行，不会出现「时间一行、级别一行」的割裂排版。
-                 级别用 inline-block 定宽保持列对齐；标签之间的换行由浏览器折叠成单个空格。 -->
+            <!-- 不用 flex：时间戳/级别/正文是连续的 inline 文本，宽度不够时整条
+                 日志自然折行，不会出现「时间一行、级别一行」的割裂排版。
+                 段间空格由 logHead/logTail 提供，容器用 pre-wrap 才不会被折叠掉。 -->
             <div
               v-for="log in filteredLogs"
               :key="log.seq"
-              class="py-[1px] hover:bg-muted/40 break-words"
-              :class="levelClass(log.level)"
+              class="py-[1px] hover:bg-muted/40 whitespace-pre-wrap break-words"
             >
-              <span v-if="log.ts" class="text-muted-foreground/70">{{ log.ts }}</span>
-              <span class="inline-block w-14 font-semibold">{{ log.level }}</span>
-              <span class="whitespace-pre-wrap">{{ log.message }}</span>
+              <span v-if="log.ts" class="text-muted-foreground/70">{{ logHead(log) }}</span>
+              <span :class="levelClass(log.level)">{{ logTail(log) }}</span>
             </div>
 
             <div v-if="!filteredLogs.length" class="text-muted-foreground text-center py-12">
