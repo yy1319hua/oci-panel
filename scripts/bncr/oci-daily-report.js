@@ -2,7 +2,7 @@
  * @author yy1319hua
  * @name oci-daily-report
  * @team oci-panel
- * @version 1.2.0
+ * @version 1.3.0
  * @description 每天定时把 oci-panel 的成本与流量汇总推送到微信等渠道。平台无关：QQ / 微信 / Telegram 均可。
  * @rule ^oci\s+日报$
  * @rule ^oci\s+日报\s+(\S+)$
@@ -24,9 +24,11 @@
  * │ 或用无界自带「定时任务」插件定时发这句命令。                   │
  * └──────────────────────────────────────────────────────────┘
  *
- * 【凭据来源】面板地址与 API Token 一律从 oci-panel.js 的插件配置里读
- * （数据库键 /plugins/凯尼尔/oci-panel.js），本插件不再重复填写、也不做任何兜底：
- * oci-panel.js 配置好的话，这里一定读得到，读不到就是键填错了。
+ * 【凭据来源】面板地址与 API Token 从插件配置库读取：
+ *   new BncrDB('PluginConfig', DatabaseInstantiationObject['pluginConfig'])
+ *     .get('/plugins/凯尼尔/oci-panel.js')
+ * 本插件不重复填写、也不做任何兜底——读不到就是键填错或插件路径不对。
+ * 表/实例/键的准确结论由 scripts/bncr/db-probe.js 实机诊断得出（发「oci 探测」可复现）。
  *
  * ⚠️ 头部注解只能用单空格分隔：@name / @rule / @cron 等字段后只能有一个空格，
  *    不要用多空格做对齐，否则 Bncr 会把多余空格算进字段值导致加载异常。
@@ -74,51 +76,24 @@ let CRED = { panelUrl: '', apiToken: '' };
 let SHARED_DEBUG = { key: '', ok: false, via: '', error: '', shape: '' };
 
 /**
- * 从 Bncr 数据库读取另一个插件的配置。
- * BncrDB 的构造参数是「表名」，get 的第一个参数是键；但插件配置到底存成
- * 「表名=插件路径」还是「表名=目录、键=文件名」，各版本不一致，
- * 所以这里按常见写法依次尝试，成功即用。
+ * 打开插件配置库。
+ *
+ * ⚠️ 全是踩过的坑（结论来自 scripts/bncr/db-probe.js 的实机诊断）：
+ *   1. 表名**固定**是 'PluginConfig'，不是插件路径；
+ *   2. **必须**传第二参数 DatabaseInstantiationObject['pluginConfig']，
+ *      不传的话读的是「默认数据库」，而默认库里只有
+ *      cron / ssh / system / tgBot / web / wxBot，压根没有 PluginConfig 表，
+ *      结果必然是 undefined（表现就是「数据库中没有该键」）；
+ *   3. 键 = 插件相对工作目录的路径，**带前导斜杠**，如 /plugins/凯尼尔/oci-panel.js；
+ *   4. 值是**扁平**的配置对象，直接 .panelUrl / .apiToken，没有 userConfig 之类包裹层。
  */
-async function readSharedConfig(key) {
-  if (!key) return null;
-  const tries = [
-    ['表名=完整路径 · 键=userConfig', async () => await new BncrDB(key).get('userConfig')],
-    ['表名=完整路径 · 键=config', async () => await new BncrDB(key).get('config')],
-    ['表名=完整路径 · 无键', async () => await new BncrDB(key).get()],
-    ['表名=目录 · 键=文件名', async () => {
-      const i = key.lastIndexOf('/');
-      if (i <= 0) return null;
-      return await new BncrDB(key.slice(0, i)).get(key.slice(i + 1));
-    }]
-  ];
-
-  const errors = [];
-  for (const [via, fn] of tries) {
-    try {
-      const v = await fn();
-      if (v && typeof v === 'object') return { value: v, via, errors };
-      if (typeof v === 'string' && v.trim().startsWith('{')) {
-        try {
-          return { value: JSON.parse(v), via: via + '（JSON 字符串）', errors };
-        } catch (_) { /* 不是 JSON，继续 */ }
-      }
-    } catch (e) {
-      errors.push(`${via}: ${e.message}`);
-    }
+function openPluginConfigDB() {
+  if (typeof DatabaseInstantiationObject === 'undefined' || !DatabaseInstantiationObject) {
+    throw new Error('DatabaseInstantiationObject 未注入');
   }
-  return { value: null, via: '', errors };
-}
-
-/** 从不同结构的配置对象里抠出面板地址与 Token */
-function pickCreds(v) {
-  if (!v || typeof v !== 'object') return null;
-  const cands = [v, v.userConfig, v.config, v.data, v.value];
-  for (const c of cands) {
-    if (c && typeof c === 'object' && (c.panelUrl || c.apiToken)) {
-      return { panelUrl: c.panelUrl || '', apiToken: c.apiToken || '' };
-    }
-  }
-  return null;
+  const info = DatabaseInstantiationObject['pluginConfig'];
+  if (!info) throw new Error('pluginConfig 数据库实例未注册');
+  return new BncrDB('PluginConfig', info);
 }
 
 /** 读取凭据：只认数据库里 oci-panel.js 的配置，没有第二套方案 */
@@ -132,30 +107,25 @@ async function resolveCreds() {
     return CRED;
   }
 
-  let res = null;
+  let v = null;
   try {
-    res = await readSharedConfig(key);
+    v = await openPluginConfigDB().get(key);
   } catch (e) {
     SHARED_DEBUG.error = e.message;
     return CRED;
   }
 
-  if (res?.value) {
-    SHARED_DEBUG.shape = Object.keys(res.value).slice(0, 8).join(',');
-    const creds = pickCreds(res.value);
-    if (creds && (creds.panelUrl || creds.apiToken)) {
-      CRED = creds;
-      SHARED_DEBUG.ok = true;
-      SHARED_DEBUG.via = res.via;
-      return CRED;
-    }
-    SHARED_DEBUG.error = `读到数据但没找到面板地址/Token（字段：${SHARED_DEBUG.shape}）`;
-  } else if (res?.errors?.length) {
-    SHARED_DEBUG.error = res.errors.join(' | ');
-  } else {
-    SHARED_DEBUG.error = '数据库中没有该键';
+  if (v && typeof v === 'object' && (v.panelUrl || v.apiToken)) {
+    CRED = { panelUrl: v.panelUrl || '', apiToken: v.apiToken || '' };
+    SHARED_DEBUG.ok = true;
+    SHARED_DEBUG.via = `PluginConfig 表 · 键=${key}`;
+    SHARED_DEBUG.shape = Object.keys(v).slice(0, 8).join(',');
+    return CRED;
   }
 
+  SHARED_DEBUG.error = v
+    ? `读到数据但没找到面板地址/Token（字段：${Object.keys(v).slice(0, 8).join(',') || '空'}）`
+    : 'PluginConfig 表中没有该键（检查是否带前导斜杠、插件路径是否一致）';
   return CRED;
 }
 

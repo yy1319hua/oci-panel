@@ -76,14 +76,27 @@
 
 ### 凭据是怎么复用的
 
-Bncr 把每个插件的配置存在 LevelDB 里，键就是插件路径（如 `/plugins/凯尼尔/oci-panel.js`）。
-本插件启动时会去读这个键，按 `表名=完整路径 · 键=userConfig`、`表名=完整路径 · 无键`、
-`表名=目录 · 键=文件名` 等几种常见存法依次尝试，**抠出 `panelUrl` 和 `apiToken` 直接用**。
+```js
+const info = DatabaseInstantiationObject['pluginConfig'];
+const cfg = await new BncrDB('PluginConfig', info).get('/plugins/凯尼尔/oci-panel.js');
+```
 
-所以只要 `oci-panel.js` 已经配置好，这个插件**什么都不用填**就能跑；换 Token 也只改一处。
+读作「插件配置库 → PluginConfig 表 → 键是插件路径」，值就是扁平的配置对象，
+直接取 `panelUrl` / `apiToken`。所以 `oci-panel.js` 配好之后，本插件**什么都不用填**，
+换 Token 也只改一处。
 
 > 插件放在别的目录（不是 `凯尼尔`）时，改「复用插件配置的数据库键」这一项即可。
 > 本插件**不做任何兜底**：读不到就是键填错了，发「oci 日报 调试」看具体原因。
+
+#### ⚠️ 三个必须记住的点（都踩过）
+
+| 项 | 说明 |
+|---|---|
+| 表名**固定** `PluginConfig` | 不是插件路径。用路径当表名读到的是默认库 |
+| **必须**传第二参数 | 不传 `DatabaseInstantiationObject['pluginConfig']` 就读默认库，而默认库只有 `cron/ssh/system/tgBot/web/wxBot`，**没有 PluginConfig 表**，结果必然 `undefined` |
+| 键**带前导斜杠** | `/plugins/凯尼尔/oci-panel.js`，去掉斜杠就读不到 |
+
+不确定自己环境长什么样时，装 `db-probe.js` 发 **`oci 探测`**，它会列出实例、表、所有键。
 
 ## 定时怎么设
 
