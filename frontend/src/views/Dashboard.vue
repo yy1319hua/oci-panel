@@ -120,21 +120,6 @@ const formatBytes = (bytes: number) => {
   return { value: v.toFixed(2), unit: units[i] }
 }
 
-// 逐日合计的趋势线（方案 A 的 sparkline）
-const sparkPoints = computed(() => {
-  const s = traffic.value.daily
-  if (!s.length) return ''
-  const max = Math.max(...s, 0.0001)
-  const n = s.length
-  return s
-    .map((v, i) => {
-      const x = n === 1 ? 50 : (i / (n - 1)) * 100
-      const y = 30 - (v / max) * 28 - 1
-      return `${x.toFixed(1)},${y.toFixed(1)}`
-    })
-    .join(' ')
-})
-
 const quickActions = [
   { title: '流量查询', description: '查看实例入站/出站流量', icon: BarChart3, path: '/configs', variant: 'outline' as const },
   { title: '实例详情', description: '实例规格 / IP / 引导卷', icon: Eye, path: '/configs', variant: 'outline' as const },
@@ -381,11 +366,6 @@ onMounted(() => {
           <div class="mt-1 h-2 rounded-full bg-slate-800 overflow-hidden">
             <div class="h-full rounded-full" :style="{ width: traffic.allowancePct + '%', background: 'linear-gradient(90deg,#22d3ee,#34d399)' }"></div>
           </div>
-
-          <svg v-if="sparkPoints" viewBox="0 0 100 30" preserveAspectRatio="none" class="w-full h-[44px] mt-4">
-            <polyline :points="sparkPoints" fill="none" stroke="#22d3ee" stroke-width="1.5" vector-effect="non-scaling-stroke" />
-          </svg>
-          <div v-else class="h-[44px] mt-4 flex items-center text-xs text-muted-foreground">暂无流量数据</div>
 
           <!-- 每实例占比 -->
           <div v-if="traffic.instances.length" class="mt-4 space-y-3">

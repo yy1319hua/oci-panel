@@ -440,7 +440,7 @@ const openSecurityList = (vcn: any) => {
     <Transition name="fade">
       <div
         v-if="open"
-        class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+        class="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/70 backdrop-blur-sm"
         @click.self="close"
       >
         <div
@@ -456,19 +456,19 @@ const openSecurityList = (vcn: any) => {
             </div>
             <Button variant="ghost" size="icon" @click="close"><X class="w-5 h-5" /></Button>
           </div>
-          <div class="flex-1 overflow-y-auto p-6">
+          <div class="flex-1 overflow-y-auto p-4 sm:p-6">
             <div v-if="loadingDetails" class="flex items-center justify-center py-12">
               <Loader2 class="w-10 h-10 animate-spin text-primary" />
             </div>
             <div v-else-if="configDetails" class="space-y-6">
               <!-- Tabs -->
               <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div class="flex gap-1 p-1 bg-muted/50 rounded-lg overflow-x-auto no-scrollbar flex-nowrap lg:flex-wrap lg:overflow-visible">
+                <div class="flex gap-1 p-1 bg-muted/50 rounded-lg flex-wrap">
                   <button
                     v-for="tab in tabs"
                     :key="tab.key"
                     :class="[
-                      'flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all whitespace-nowrap shrink-0',
+                      'flex items-center gap-2 px-3 sm:px-4 py-2 rounded-md text-sm font-medium transition-all',
                       activeTab === tab.key
                         ? 'bg-primary text-primary-foreground shadow-sm'
                         : 'text-muted-foreground hover:text-foreground hover:bg-muted'

@@ -37,8 +37,8 @@ defineEmits<{
     <Card v-for="instance in instances" :key="instance.id" class="p-5 hover:border-primary/50 transition-colors">
       <div class="flex justify-between items-start mb-4">
         <div class="flex-1 min-w-0 pr-4">
-          <h4 class="font-semibold text-lg truncate">{{ instance.displayName }}</h4>
-          <p class="text-xs text-muted-foreground font-mono truncate mt-1">{{ instance.id }}</p>
+          <h4 class="font-semibold text-lg break-words">{{ instance.displayName }}</h4>
+          <p class="text-xs text-muted-foreground font-mono break-all mt-1">{{ instance.id }}</p>
         </div>
         <Badge
           :variant="instance.state === 'RUNNING' ? 'success' : instance.state === 'STOPPED' ? 'destructive' : 'warning'"

@@ -152,7 +152,31 @@ const chartDays = computed(() => {
       <!-- 逐日明细 -->
       <Card class="p-4">
         <h4 class="font-semibold mb-4">每日费用明细</h4>
-        <div class="overflow-x-auto max-h-[400px] overflow-y-auto">
+
+        <!-- 手机端：卡片式堆叠，避免窄屏把日期/徽章挤到换行 -->
+        <div class="sm:hidden max-h-[400px] overflow-y-auto">
+          <div
+            v-for="d in [...cost.days].reverse()"
+            :key="d.date"
+            class="flex items-center justify-between gap-3 py-3 border-b border-border/50 last:border-0"
+          >
+            <p class="font-mono text-sm whitespace-nowrap">{{ d.date }}</p>
+            <div class="flex items-center gap-2 shrink-0">
+              <span class="tabular-nums text-sm" :class="d.amount > 0 ? 'text-destructive font-medium' : ''">
+                {{ formatAmount(d.amount, d.currency) }}
+              </span>
+              <span
+                class="px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap"
+                :class="d.amount > 0 ? 'bg-destructive/15 text-destructive' : 'bg-success/15 text-success'"
+              >
+                {{ d.amount > 0 ? '已扣费' : '免费' }}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 桌面端：保持原表格 -->
+        <div class="hidden sm:block overflow-x-auto max-h-[400px] overflow-y-auto">
           <Table>
             <TableHeader>
               <TableRow>

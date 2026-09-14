@@ -934,10 +934,6 @@ const systemInfo = computed(() => [
                   </Button>
                 </div>
               </div>
-              <span class="font-mono flex items-center gap-2 shrink-0">
-                <User class="w-4 h-4 text-muted-foreground" />
-                {{ profile.account || '...' }}
-              </span>
             </div>
             <div class="px-4 sm:px-6 py-4 space-y-2">
               <label class="text-sm font-medium block">邮箱（用于密码重置通知）</label>
@@ -1011,7 +1007,7 @@ const systemInfo = computed(() => [
               :key="t.id"
               class="flex flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-3"
             >
-              <div class="min-w-0 flex-1">
+              <div class="min-w-0 flex-1 w-full sm:w-auto">
                 <div class="flex flex-wrap items-center gap-2">
                   <span class="font-medium truncate min-w-0 w-full sm:w-auto sm:flex-1">{{ t.name }}</span>
                   <Badge
@@ -1025,7 +1021,7 @@ const systemInfo = computed(() => [
                     调用 {{ t.callCount || 0 }} 次
                   </Badge>
                 </div>
-                <p class="text-xs text-muted-foreground mt-1 font-mono truncate">{{ t.prefix }}••••••••</p>
+                <p class="text-xs text-muted-foreground mt-1 font-mono break-all">{{ t.prefix }}••••••••</p>
                 <p class="text-xs text-muted-foreground mt-1 flex items-center gap-1 flex-wrap">
                   <Clock class="w-3 h-3" />
                   创建 {{ formatTime(t.createdAt) }} · 最近使用 {{ formatTime(t.lastUsedAt) }}
@@ -1033,7 +1029,7 @@ const systemInfo = computed(() => [
                   · 过期 {{ t.expiresAt ? formatTime(t.expiresAt) : '永不过期' }}
                 </p>
               </div>
-              <div class="flex items-center gap-2">
+              <div class="flex items-center gap-2 w-full sm:w-auto justify-end sm:justify-start">
                 <Button variant="outline" size="sm" @click="openCalls(t)">
                   <Activity class="w-4 h-4" />
                   调用记录
