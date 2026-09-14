@@ -28,17 +28,17 @@ defineEmits<{
   </div>
   <div v-else class="space-y-4">
     <Card v-for="vcn in vcns" :key="vcn.id" class="p-5">
-      <div class="flex justify-between items-start mb-4">
-        <div class="flex items-center gap-4">
-          <div class="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
+      <div class="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3 mb-4">
+        <div class="flex items-center gap-4 min-w-0">
+          <div class="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
             <Network class="w-6 h-6 text-primary" />
           </div>
-          <div>
-            <h4 class="font-semibold text-lg">{{ vcn.displayName }}</h4>
-            <p class="text-sm text-muted-foreground font-mono">CIDR: {{ vcn.cidrBlock }}</p>
+          <div class="min-w-0">
+            <h4 class="font-semibold text-lg break-words">{{ vcn.displayName }}</h4>
+            <p class="text-sm text-muted-foreground font-mono break-all">CIDR: {{ vcn.cidrBlock }}</p>
           </div>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2 shrink-0">
           <Badge variant="success">{{ vcn.state }}</Badge>
           <Button size="sm" variant="outline" @click="$emit('security', vcn)">
             <Shield class="w-4 h-4" />
@@ -51,9 +51,9 @@ defineEmits<{
         <h5 class="text-sm font-medium mb-3">子网 ({{ vcn.subnets.length }}个)</h5>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div v-for="subnet in vcn.subnets" :key="subnet.id" class="bg-muted/30 rounded-lg p-4">
-            <div class="flex justify-between items-center mb-2">
-              <span class="font-medium">{{ subnet.displayName }}</span>
-              <Badge :variant="subnet.isPublic ? 'success' : 'warning'" class="text-xs">
+            <div class="flex justify-between items-center gap-2 mb-2">
+              <span class="font-medium break-words min-w-0">{{ subnet.displayName }}</span>
+              <Badge :variant="subnet.isPublic ? 'success' : 'warning'" class="text-xs shrink-0">
                 {{ subnet.isPublic ? '公有' : '私有' }}
               </Badge>
             </div>

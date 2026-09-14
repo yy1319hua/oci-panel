@@ -359,9 +359,9 @@ onMounted(() => {
             仅<span class="text-foreground/80">出站</span>超出免费额度才计费。
           </p>
 
-          <div class="mt-3 flex items-center justify-between text-xs text-muted-foreground">
-            <span>免费额度 {{ formatBytes(traffic.freeAllowance).value }} {{ formatBytes(traffic.freeAllowance).unit }} · 出站已用 {{ traffic.allowancePct.toFixed(1) }}%</span>
-            <span><span class="text-emerald-400">入 {{ formatBytes(traffic.inboundBytes).value }}{{ formatBytes(traffic.inboundBytes).unit }}</span> / <span class="text-amber-400">出 {{ formatBytes(traffic.outboundBytes).value }}{{ formatBytes(traffic.outboundBytes).unit }}</span></span>
+          <div class="mt-3 space-y-1 text-xs text-muted-foreground">
+            <div>免费额度 {{ formatBytes(traffic.freeAllowance).value }} {{ formatBytes(traffic.freeAllowance).unit }} · 出站已用 {{ traffic.allowancePct.toFixed(1) }}%</div>
+            <div><span class="text-emerald-400">入 {{ formatBytes(traffic.inboundBytes).value }}{{ formatBytes(traffic.inboundBytes).unit }}</span> / <span class="text-amber-400">出 {{ formatBytes(traffic.outboundBytes).value }}{{ formatBytes(traffic.outboundBytes).unit }}</span></div>
           </div>
           <div class="mt-1 h-2 rounded-full bg-slate-800 overflow-hidden">
             <div class="h-full rounded-full" :style="{ width: traffic.allowancePct + '%', background: 'linear-gradient(90deg,#22d3ee,#34d399)' }"></div>

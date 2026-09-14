@@ -447,7 +447,7 @@ const openSecurityList = (vcn: any) => {
           v-motion
           :initial="{ opacity: 0, scale: 0.95 }"
           :enter="{ opacity: 1, scale: 1 }"
-          class="bg-card rounded-xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col border border-border sm:m-4"
+          class="bg-card rounded-xl shadow-2xl w-full max-w-6xl min-w-0 max-h-[90vh] overflow-hidden flex flex-col border border-border sm:m-4"
         >
           <div class="flex items-center justify-between p-4 sm:p-6 border-b border-border bg-card/80 backdrop-blur">
             <div>
@@ -456,7 +456,7 @@ const openSecurityList = (vcn: any) => {
             </div>
             <Button variant="ghost" size="icon" @click="close"><X class="w-5 h-5" /></Button>
           </div>
-          <div class="flex-1 overflow-y-auto p-4 sm:p-6">
+          <div class="flex-1 min-w-0 overflow-y-auto p-4 sm:p-6">
             <div v-if="loadingDetails" class="flex items-center justify-center py-12">
               <Loader2 class="w-10 h-10 animate-spin text-primary" />
             </div>

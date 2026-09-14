@@ -28,17 +28,17 @@ defineEmits<{
   </div>
   <div v-else class="space-y-4">
     <Card v-for="volume in volumes" :key="volume.id" class="p-5">
-      <div class="flex justify-between items-start mb-4">
-        <div class="flex items-center gap-4">
-          <div class="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
+      <div class="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3 mb-4">
+        <div class="flex items-center gap-4 min-w-0">
+          <div class="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
             <HardDrive class="w-6 h-6 text-primary" />
           </div>
-          <div>
-            <h4 class="font-semibold text-lg">{{ volume.displayName }}</h4>
-            <p class="text-xs text-muted-foreground font-mono">{{ volume.id?.substring(0, 40) }}...</p>
+          <div class="min-w-0">
+            <h4 class="font-semibold text-lg break-words">{{ volume.displayName }}</h4>
+            <p class="text-xs text-muted-foreground font-mono break-all mt-1">{{ volume.id?.substring(0, 40) }}...</p>
           </div>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2 shrink-0">
           <Badge :variant="volume.attached ? 'success' : 'warning'">
             {{ volume.attached ? '已附加' : '未附加' }}
           </Badge>
