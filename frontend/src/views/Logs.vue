@@ -558,19 +558,19 @@ onUnmounted(() => {
         <div class="relative">
           <div
             ref="logConsole"
-            class="bg-background p-4 h-[60vh] sm:h-[620px] overflow-y-auto overflow-x-auto font-mono text-xs
+            class="bg-background p-4 h-[60vh] sm:h-[620px] overflow-y-auto font-mono text-xs
                    leading-relaxed antialiased"
             @scroll.passive="handleScroll"
           >
             <div
               v-for="log in filteredLogs"
               :key="log.seq"
-              class="flex gap-2 py-[1px] hover:bg-muted/40 w-max min-w-full"
+              class="flex gap-2 py-[1px] hover:bg-muted/40"
               :class="levelClass(log.level)"
             >
               <span v-if="log.ts" class="shrink-0 text-muted-foreground/70">{{ log.ts }}</span>
               <span class="shrink-0 w-16 font-semibold" :class="levelClass(log.level)">{{ log.level }}</span>
-              <span class="whitespace-pre">{{ log.message }}</span>
+              <span class="whitespace-pre-wrap break-words min-w-0">{{ log.message }}</span>
             </div>
 
             <div v-if="!filteredLogs.length" class="text-muted-foreground text-center py-12">
