@@ -1,18 +1,18 @@
 /**
- * @author      yy1319hua
- * @name        oci-panel
- * @team        oci-panel
- * @version     1.0.0
+ * @author yy1319hua
+ * @name oci-panel
+ * @team oci-panel
+ * @version 1.0.0
  * @description 调用 oci-panel 开放 API 查询甲骨文实例状态、流量、成本。平台无关：QQ / 微信 / Telegram 均可触发。
- * @rule        ^oci$
- * @rule        ^oci\s+(状态|status)$
- * @rule        ^oci\s+流量$
- * @rule        ^oci\s+成本$
- * @rule        ^oci\s+帮助$
- * @rule        ^oci\s+配置$
- * @priority    100
- * @admin       true
- * @public      true
+ * @rule ^oci$
+ * @rule ^oci\s+(状态|status)$
+ * @rule ^oci\s+流量$
+ * @rule ^oci\s+成本$
+ * @rule ^oci\s+帮助$
+ * @rule ^oci\s+配置$
+ * @priority 100
+ * @admin true
+ * @public true
  * @classification ["甲骨文"]
  */
 
