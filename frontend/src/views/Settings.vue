@@ -1012,10 +1012,15 @@ const systemInfo = computed(() => [
               class="flex flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-3"
             >
               <div class="min-w-0 flex-1">
-                <div class="flex items-center gap-2">
-                  <span class="font-medium truncate">{{ t.name }}</span>
-                  <Badge :variant="t.scope === 'full' ? 'success' : 'secondary'">{{ t.scope }}</Badge>
-                  <Badge variant="secondary" class="gap-1">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="font-medium truncate min-w-0 w-full sm:w-auto sm:flex-1">{{ t.name }}</span>
+                  <Badge
+                    :variant="t.scope === 'full' ? 'success' : 'secondary'"
+                    class="shrink-0 whitespace-nowrap"
+                  >
+                    {{ t.scope }}
+                  </Badge>
+                  <Badge variant="secondary" class="gap-1 shrink-0 whitespace-nowrap">
                     <Activity class="w-3 h-3" />
                     调用 {{ t.callCount || 0 }} 次
                   </Badge>

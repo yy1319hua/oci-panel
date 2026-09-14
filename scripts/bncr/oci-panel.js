@@ -161,20 +161,35 @@ async function renderTraffic(arg) {
     body: { configId, forceRefresh: false }
   });
 
-  const used = d.billableTraffic || 0;
+  // 免费额度只针对「出站」：入站免费，出站超出额度后才计费。
+  // 所以「已用」必须拿**出站流量**去除额度，不能用 billableTraffic ——
+  // 后者是超出额度之后才产生的计费量，没超额时恒为 0，会出现
+  // 「明明用了十几 G、却显示 0%」的错。
+  const out = d.outboundTraffic || 0;
   const free = d.freeAllowance || 0;
-  const pct = free > 0 ? ((used / free) * 100).toFixed(1) : '0';
+  const billable = d.billableTraffic || 0;
+  const pct = free > 0 ? (out / free) * 100 : 0;
 
   const lines = [
     `📊 月度流量（${d.instanceCount || 0} 台实例）`,
     `━━━━━━━━━━━━━━━`,
-    `↓ 入站：${fmtBytes(d.inboundTraffic)}`,
-    `↑ 出站：${fmtBytes(d.outboundTraffic)}`,
-    `💰 计费流量：${fmtBytes(used)}`,
+    `↓ 入站（免费）：${fmtBytes(d.inboundTraffic)}`,
+    `↑ 出站（计费方向）：${fmtBytes(out)}`,
     `🎁 免费额度：${fmtBytes(free)}`,
-    `📈 已用：${pct}%`,
+    `📈 已用：${pct.toFixed(2)}%`,
+    `💸 超额计费流量：${fmtBytes(billable)}`,
     ''
   ];
+
+  // 按实例拆分（接口返回 instances：displayName / inbound / outbound）
+  if (d.instances?.length) {
+    lines.push('按实例拆分（出站 / 入站）：');
+    for (const i of d.instances) {
+      lines.push(`• ${i.displayName || i.instanceId || '(未命名)'}`);
+      lines.push(`　↑ ${fmtBytes(i.outbound)}　↓ ${fmtBytes(i.inbound)}`);
+    }
+    lines.push('');
+  }
 
   return lines.join('\n');
 }

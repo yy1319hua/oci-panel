@@ -248,9 +248,11 @@ func (wc *WebSocketController) HandleWebSocket(c *gin.Context) {
 
 	// 回放历史日志：把服务端已缓冲的最近日志先发给新连接，
 	// 这样进入页面或重连后能看到「连接前」的历史，而不只是连接后的实时日志。
-	for _, line := range wc.wsService.GetHistory() {
-		_ = conn.WriteMessage(websocket.TextMessage, []byte(line))
-	}
+	//
+	// 必须走 wsService.WriteHistory（内部按连接加写锁），绝不能直接对 conn
+	// 调 WriteMessage —— 那会与广播 goroutine 并发写同一条连接，触发
+	// gorilla 的 "concurrent write to websocket connection" panic 崩掉整个进程。
+	wc.wsService.WriteHistory(conn, wc.wsService.GetHistory())
 
 	for {
 		_, _, err := conn.ReadMessage()

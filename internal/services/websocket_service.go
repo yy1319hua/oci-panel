@@ -19,6 +19,10 @@ type WebSocketService struct {
 	mu         sync.RWMutex
 	history    []string // 环形缓冲：保存最近 N 条日志，供新连接回放历史
 	historyMax int
+	// writeLocks 保存「每个连接一把写锁」。gorilla/websocket 硬性要求：同一连接
+	// 同一时刻只能有一个写者，否则会 panic("concurrent write to websocket connection")。
+	// 广播（fanOut）与建连回放（WriteHistory）分属不同 goroutine，必须靠这把锁串行化。
+	writeLocks sync.Map // map[*websocket.Conn]*sync.Mutex
 }
 
 const (
@@ -123,8 +127,17 @@ func (ws *WebSocketService) fanOut(message []byte) {
 		wg.Add(1)
 		go func(conn *websocket.Conn) {
 			defer wg.Done()
-			_ = conn.SetWriteDeadline(time.Now().Add(webSocketWriteTimeout))
-			if err := conn.WriteMessage(websocket.TextMessage, message); err != nil {
+			// 兜底：写过程中的任何 panic（如并发写保护）都不允许掀翻整个进程——
+			// 之前正是这里的 panic 让面板反复崩溃、/api/sys/wsTicket 被重置成 502。
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("WebSocket write panic recovered: %v", r)
+					failedMu.Lock()
+					failed = append(failed, conn)
+					failedMu.Unlock()
+				}
+			}()
+			if err := ws.writeMessage(conn, message); err != nil {
 				failedMu.Lock()
 				failed = append(failed, conn)
 				failedMu.Unlock()
@@ -139,12 +152,40 @@ func (ws *WebSocketService) fanOut(message []byte) {
 	ws.dropClients(failed)
 }
 
+// writeMessage 是向客户端连接写入的**唯一入口**，按连接串行化。
+//
+// 为什么必须串行：gorilla/websocket 规定同一连接同一时刻只允许一个写者，
+// 广播（fanOut 的多个 goroutine）与日志页建连回放（WriteHistory）会并发写同一条
+// 连接，触发 panic("concurrent write to websocket connection") 直接崩溃进程。
+// 锁粒度是「每连接一把」，因此不同客户端之间仍然完全并行，互不阻塞。
+func (ws *WebSocketService) writeMessage(conn *websocket.Conn, data []byte) error {
+	lockValue, _ := ws.writeLocks.LoadOrStore(conn, &sync.Mutex{})
+	mu := lockValue.(*sync.Mutex)
+	mu.Lock()
+	defer mu.Unlock()
+	_ = conn.SetWriteDeadline(time.Now().Add(webSocketWriteTimeout))
+	return conn.WriteMessage(websocket.TextMessage, data)
+}
+
+// WriteHistory 把历史日志按「旧 → 新」串行写回指定连接。
+//
+// 与广播共用 writeMessage 的写锁，因此回放期间到达的实时广播不会与其并发写、
+// 也就不会再出现那条把面板打崩的并发写 panic。
+func (ws *WebSocketService) WriteHistory(conn *websocket.Conn, lines []string) {
+	for _, line := range lines {
+		if err := ws.writeMessage(conn, []byte(line)); err != nil {
+			return
+		}
+	}
+}
+
 // dropClients 关闭并移除写失败的连接（仅在真正持有失败连接时短暂持锁）。
 func (ws *WebSocketService) dropClients(conns []*websocket.Conn) {
 	ws.mu.Lock()
 	for _, conn := range conns {
 		if _, ok := ws.clients[conn]; ok {
 			delete(ws.clients, conn)
+			ws.writeLocks.Delete(conn)
 			_ = conn.Close()
 			log.Printf("WebSocket client dropped (write failed)")
 		}
@@ -169,6 +210,7 @@ func (ws *WebSocketService) UnregisterClient(conn *websocket.Conn) {
 	ws.mu.Lock()
 	if _, ok := ws.clients[conn]; ok {
 		delete(ws.clients, conn)
+		ws.writeLocks.Delete(conn)
 		conn.Close()
 	}
 	count := len(ws.clients)
