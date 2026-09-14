@@ -1132,7 +1132,7 @@ const systemInfo = computed(() => [
           </p>
           <div class="flex flex-wrap gap-3">
             <a
-              href="https://github.com/adiecho/oci-panel"
+              href="https://github.com/yy1319hua/oci-panel"
               target="_blank"
               rel="noopener noreferrer"
               class="inline-flex items-center justify-center gap-2 rounded-md border border-input bg-transparent px-4 py-2 text-sm font-medium transition-all duration-200 hover:bg-accent hover:text-accent-foreground"

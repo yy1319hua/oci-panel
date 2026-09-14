@@ -390,7 +390,7 @@ func (s *TelegramService) handleUpdate(update TelegramUpdate) {
 	if update.Message != nil {
 		if fmt.Sprintf("%d", update.Message.Chat.ID) != chatID {
 			s.doSendMessage(fmt.Sprintf("%d", update.Message.Chat.ID),
-				"❌ 无权限操作此机器人🤖\n项目地址: https://github.com/adiecho/oci-panel", nil)
+				"❌ 无权限操作此机器人🤖\n项目地址: https://github.com/yy1319hua/oci-panel", nil)
 			return
 		}
 
@@ -673,7 +673,7 @@ func (s *TelegramService) getMainKeyboard() *InlineKeyboardMarkup {
 				{Text: "📊 流量统计", CallbackData: "traffic_stats"},
 			},
 			{
-				{Text: "⭐ 开源地址（欢迎Star）", URL: "https://github.com/adiecho/oci-panel"},
+				{Text: "⭐ 开源地址（欢迎Star）", URL: "https://github.com/yy1319hua/oci-panel"},
 			},
 			{
 				{Text: "❌ 关闭窗口", CallbackData: "cancel"},
