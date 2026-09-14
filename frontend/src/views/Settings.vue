@@ -156,6 +156,13 @@ const openCalls = async (t: ApiToken) => {
 const statusClass = (code: number) =>
   code >= 500 ? 'text-destructive' : code >= 400 ? 'text-warning' : 'text-success'
 
+// 调用记录拼成「一行一条」的纯文本行，风格与实时日志页保持一致：
+// 2026-09-15 03:58:28 [API] GET /api/configs/list → 200 ip=1.2.3.4
+// 拆成 head/tail 两段是为了让状态码单独着色；段间空格由模板换行折叠产生，
+// 因此这里头尾不再留空格，避免出现双空格。
+const callHead = (c: TokenCallLog) => `${formatTime(c.createdAt)} [API] ${c.method} ${c.path} →`
+const callTail = (c: TokenCallLog) => `ip=${c.ip || '—'}`
+
 // 按调用次数排序展示（调用多的令牌排前面更直观）
 const sortedTokens = computed(() =>
   [...tokens.value].sort((a, b) => (b.callCount || 0) - (a.callCount || 0))
@@ -1009,7 +1016,7 @@ const systemInfo = computed(() => [
             >
               <div class="min-w-0 flex-1 w-full sm:w-auto">
                 <div class="flex flex-wrap items-center gap-2">
-                  <span class="font-medium truncate min-w-0 w-full sm:w-auto sm:flex-1">{{ t.name }}</span>
+                  <span class="font-medium break-words min-w-0 w-full sm:w-auto sm:flex-1">{{ t.name }}</span>
                   <Badge
                     :variant="t.scope === 'full' ? 'success' : 'secondary'"
                     class="shrink-0 whitespace-nowrap"
@@ -1022,12 +1029,22 @@ const systemInfo = computed(() => [
                   </Badge>
                 </div>
                 <p class="text-xs text-muted-foreground mt-1 font-mono break-all">{{ t.prefix }}••••••••</p>
-                <p class="text-xs text-muted-foreground mt-1 flex items-center gap-1 flex-wrap">
-                  <Clock class="w-3 h-3" />
-                  创建 {{ formatTime(t.createdAt) }} · 最近使用 {{ formatTime(t.lastUsedAt) }}
-                  <template v-if="t.lastUsedIp"> · 来源 {{ t.lastUsedIp }}</template>
-                  · 过期 {{ t.expiresAt ? formatTime(t.expiresAt) : '永不过期' }}
-                </p>
+                <div class="text-xs text-muted-foreground mt-1.5 space-y-1">
+                  <p class="flex items-center gap-1.5 flex-wrap">
+                    <Clock class="w-3 h-3 shrink-0" />
+                    创建 {{ formatTime(t.createdAt) }}
+                    <span class="text-muted-foreground/40">·</span>
+                    过期 {{ t.expiresAt ? formatTime(t.expiresAt) : '永不过期' }}
+                  </p>
+                  <p class="flex items-center gap-1.5 flex-wrap">
+                    <Activity class="w-3 h-3 shrink-0" />
+                    最近使用 {{ formatTime(t.lastUsedAt) }}
+                    <template v-if="t.lastUsedIp">
+                      <span class="text-muted-foreground/40">·</span>
+                      来源 {{ t.lastUsedIp }}
+                    </template>
+                  </p>
+                </div>
               </div>
               <div class="flex items-center gap-2 w-full sm:w-auto justify-end sm:justify-start">
                 <Button variant="outline" size="sm" @click="openCalls(t)">
@@ -1209,31 +1226,16 @@ const systemInfo = computed(() => [
           <div v-else-if="tokenCalls.length === 0" class="text-center py-8 text-muted-foreground text-sm">
             暂无调用记录
           </div>
-          <div v-else class="overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead>
-                <tr class="text-left text-muted-foreground border-b border-border/50">
-                  <th class="py-2 pr-3 font-medium">时间</th>
-                  <th class="py-2 pr-3 font-medium">方法</th>
-                  <th class="py-2 pr-3 font-medium">路径</th>
-                  <th class="py-2 pr-3 font-medium">状态</th>
-                  <th class="py-2 font-medium">来源 IP</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="call in tokenCalls"
-                  :key="call.id"
-                  class="border-b border-border/30 last:border-0"
-                >
-                  <td class="py-2 pr-3 text-muted-foreground whitespace-nowrap">{{ formatTime(call.createdAt) }}</td>
-                  <td class="py-2 pr-3 font-mono">{{ call.method }}</td>
-                  <td class="py-2 pr-3 font-mono break-all">{{ call.path }}</td>
-                  <td class="py-2 pr-3 font-mono" :class="statusClass(call.statusCode)">{{ call.statusCode }}</td>
-                  <td class="py-2 font-mono text-muted-foreground">{{ call.ip || '—' }}</td>
-                </tr>
-              </tbody>
-            </table>
+          <div v-else class="divide-y divide-border/30">
+            <div
+              v-for="call in tokenCalls"
+              :key="call.id"
+              class="py-2 font-mono text-xs leading-relaxed hover:bg-muted/40 break-words"
+            >
+              <span class="text-foreground/80">{{ callHead(call) }}</span>
+              <span :class="statusClass(call.statusCode)">{{ call.statusCode }}</span>
+              <span class="text-muted-foreground">{{ callTail(call) }}</span>
+            </div>
           </div>
         </div>
 

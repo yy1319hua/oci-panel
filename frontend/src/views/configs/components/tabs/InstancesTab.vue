@@ -47,30 +47,34 @@ defineEmits<{
           {{ instance.state }}
         </Badge>
       </div>
-      <div class="grid grid-cols-2 gap-3 text-sm mb-5">
-        <div class="bg-muted/30 rounded-lg p-3">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm mb-5">
+        <div class="bg-muted/30 rounded-lg p-3 sm:col-span-2">
           <span class="text-muted-foreground text-xs block mb-1">规格</span>
-          <span class="font-medium">{{ instance.shape }}</span>
+          <span class="font-medium break-words">{{ instance.shape }}</span>
         </div>
         <div class="bg-muted/30 rounded-lg p-3">
           <span class="text-muted-foreground text-xs block mb-1">CPU / 内存</span>
-          <span class="font-medium">{{ instance.ocpus }}核 / {{ instance.memory }}GB</span>
+          <span class="font-medium break-words">{{ instance.ocpus }}核 / {{ instance.memory }}GB</span>
         </div>
         <div class="bg-muted/30 rounded-lg p-3">
           <span class="text-muted-foreground text-xs block mb-1">引导卷</span>
           <span class="font-medium">{{ instance.bootVolumeSize || '-' }} GB</span>
         </div>
-        <div class="bg-muted/30 rounded-lg p-3">
+        <div class="bg-muted/30 rounded-lg p-3 sm:col-span-2">
           <span class="text-muted-foreground text-xs block mb-1">区域</span>
-          <span class="font-medium">{{ instance.region }}</span>
+          <span class="font-medium break-words">{{ instance.region }}</span>
         </div>
-        <div class="bg-muted/30 rounded-lg p-3 col-span-2">
+        <div class="bg-muted/30 rounded-lg p-3 sm:col-span-2">
           <span class="text-muted-foreground text-xs block mb-1">公网IP</span>
-          <span class="font-mono text-sm font-medium">{{ instance.publicIps?.join(', ') || '无' }}</span>
+          <span class="font-mono text-sm font-medium break-words">{{ instance.publicIps?.join(', ') || '无' }}</span>
         </div>
-        <div v-if="instance.ipv6" class="bg-primary/5 border border-primary/20 rounded-lg p-3 col-span-2">
+        <div class="bg-muted/30 rounded-lg p-3 sm:col-span-2">
+          <span class="text-muted-foreground text-xs block mb-1">内网IP</span>
+          <span class="font-mono text-sm font-medium break-words">{{ instance.privateIps?.join(', ') || '无' }}</span>
+        </div>
+        <div v-if="instance.ipv6" class="bg-primary/5 border border-primary/20 rounded-lg p-3 sm:col-span-2">
           <span class="text-primary text-xs block mb-1">IPv6</span>
-          <span class="font-mono text-sm text-primary">{{ instance.ipv6 }}</span>
+          <span class="font-mono text-sm text-primary break-all">{{ instance.ipv6 }}</span>
         </div>
       </div>
       <div class="flex flex-wrap gap-2">

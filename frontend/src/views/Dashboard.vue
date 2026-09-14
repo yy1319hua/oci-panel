@@ -13,7 +13,8 @@ import {
   BarChart3,
   Settings,
   FileText,
-  Eye
+  Eye,
+  Globe
 } from 'lucide-vue-next'
 import { sysApi, ociApi, type InstanceInfo } from '@/api'
 import { toast } from '@/composables/useToast'
@@ -294,12 +295,16 @@ onMounted(() => {
             </div>
 
             <div class="grid grid-cols-2 gap-y-2 gap-x-4 mt-4 text-sm">
-              <div class="flex items-center gap-2 text-muted-foreground">
-                <Network class="w-4 h-4" />
-                <span class="truncate">{{ inst.publicIps?.[0] || '无公网IP' }}</span>
+              <div class="flex items-center gap-2 text-muted-foreground min-w-0">
+                <Globe class="w-4 h-4 shrink-0" />
+                <span class="break-words min-w-0">{{ inst.publicIps?.join(', ') || '无公网IP' }}</span>
+              </div>
+              <div class="flex items-center gap-2 text-muted-foreground min-w-0">
+                <Network class="w-4 h-4 shrink-0" />
+                <span class="break-words min-w-0">{{ inst.privateIps?.join(', ') || '无内网IP' }}</span>
               </div>
               <div class="flex items-center gap-2 text-muted-foreground">
-                <Cpu class="w-4 h-4" />
+                <Cpu class="w-4 h-4 shrink-0" />
                 <span>{{ inst.ocpus }} OCPU / {{ inst.memory }} GB</span>
               </div>
               <div class="flex items-center gap-2 text-muted-foreground">

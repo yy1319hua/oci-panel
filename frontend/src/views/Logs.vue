@@ -562,15 +562,18 @@ onUnmounted(() => {
                    leading-relaxed antialiased"
             @scroll.passive="handleScroll"
           >
+            <!-- 不用 flex：改成普通文本流，时间戳/级别/正文连续排成一整行，
+                 宽度不够时整条日志自然折行，不会出现「时间一行、级别一行」的割裂排版。
+                 级别用 inline-block 定宽保持列对齐；标签之间的换行由浏览器折叠成单个空格。 -->
             <div
               v-for="log in filteredLogs"
               :key="log.seq"
-              class="flex gap-2 py-[1px] hover:bg-muted/40"
+              class="py-[1px] hover:bg-muted/40 break-words"
               :class="levelClass(log.level)"
             >
-              <span v-if="log.ts" class="shrink-0 text-muted-foreground/70">{{ log.ts }}</span>
-              <span class="shrink-0 w-16 font-semibold" :class="levelClass(log.level)">{{ log.level }}</span>
-              <span class="whitespace-pre-wrap break-words min-w-0">{{ log.message }}</span>
+              <span v-if="log.ts" class="text-muted-foreground/70">{{ log.ts }}</span>
+              <span class="inline-block w-14 font-semibold">{{ log.level }}</span>
+              <span class="whitespace-pre-wrap">{{ log.message }}</span>
             </div>
 
             <div v-if="!filteredLogs.length" class="text-muted-foreground text-center py-12">

@@ -37,6 +37,7 @@ export interface InstanceInfo {
   bootVolumeVpu?: number
   region: string
   publicIps?: string[]
+  privateIps?: string[]
   ipv6?: string
   imageName?: string
   createTime?: string
