@@ -162,7 +162,7 @@ func Setup(r *gin.Engine, cfg *config.Config) *Services {
 			telegram.POST("/stopBot", telegramCtrl.StopBot)
 		}
 
-		botCtrl := controllers.NewBotController(instanceService)
+		botCtrl := controllers.NewBotController(ociService)
 		bot := api.Group("/bot")
 		{
 			// 紧凑只读摘要：机器人通过 API Token 拉取实例概况

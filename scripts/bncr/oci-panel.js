@@ -2,7 +2,7 @@
  * @author yy1319hua
  * @name oci-panel
  * @team oci-panel
- * @version 1.0.0
+ * @version 1.0.1
  * @description 调用 oci-panel 开放 API 查询甲骨文实例状态、流量、成本。平台无关：QQ / 微信 / Telegram 均可触发。
  * @rule ^oci$
  * @rule ^oci\s+(状态|status)$
@@ -142,6 +142,7 @@ async function renderSummary() {
         lines.push(`　• ${inst.name || '(无名称)'}`);
         lines.push(`　　${fmtState(inst.state)}　${inst.shape || ''}`);
         lines.push(`　　🌐 ${ip}`);
+        if (inst.ipv6) lines.push(`　　🌐 ${inst.ipv6}`);
       }
     } else {
       lines.push('　（该配置下没有实例）');
