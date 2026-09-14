@@ -13,11 +13,11 @@ import (
 
 type InstanceController struct {
 	instanceService *services.InstanceService
-	wsService       *services.WebSocketService
+	logService      *services.LogStreamService
 }
 
-func NewInstanceController(instanceService *services.InstanceService, wsService *services.WebSocketService) *InstanceController {
-	return &InstanceController{instanceService: instanceService, wsService: wsService}
+func NewInstanceController(instanceService *services.InstanceService, logService *services.LogStreamService) *InstanceController {
+	return &InstanceController{instanceService: instanceService, logService: logService}
 }
 
 type ListInstancesRequest struct {
@@ -281,7 +281,7 @@ func (ic *InstanceController) AutoRescue(c *gin.Context) {
 		progressChan := make(chan services.AutoRescueProgress, 10)
 		util.Go("AutoRescue.progress", func() {
 			for progress := range progressChan {
-				ic.wsService.SendInfo(fmt.Sprintf("AutoRescue [%s] Step %d/%d: %s", req.InstanceId, progress.Step, progress.TotalSteps, progress.Message))
+				ic.logService.SendInfo(fmt.Sprintf("AutoRescue [%s] Step %d/%d: %s", req.InstanceId, progress.Step, progress.TotalSteps, progress.Message))
 			}
 		})
 
@@ -289,9 +289,9 @@ func (ic *InstanceController) AutoRescue(c *gin.Context) {
 		close(progressChan)
 		if err != nil {
 			log.Printf("AutoRescue failed for instance %s: %v", req.InstanceId, err)
-			ic.wsService.SendError(fmt.Sprintf("AutoRescue failed for instance %s: %v", req.InstanceId, err))
+			ic.logService.SendError(fmt.Sprintf("AutoRescue failed for instance %s: %v", req.InstanceId, err))
 		} else {
-			ic.wsService.SendSuccess(fmt.Sprintf("AutoRescue completed for instance %s", req.InstanceId))
+			ic.logService.SendSuccess(fmt.Sprintf("AutoRescue completed for instance %s", req.InstanceId))
 		}
 	})
 
@@ -323,10 +323,10 @@ func (ic *InstanceController) Enable500Mbps(c *gin.Context) {
 		publicIP, err := ic.instanceService.Enable500Mbps(req.UserId, req.InstanceId, sshPort)
 		if err != nil {
 			log.Printf("Enable500Mbps failed for instance %s: %v", req.InstanceId, err)
-			ic.wsService.SendError(fmt.Sprintf("Enable500Mbps failed for instance %s: %v", req.InstanceId, err))
+			ic.logService.SendError(fmt.Sprintf("Enable500Mbps failed for instance %s: %v", req.InstanceId, err))
 		} else {
 			log.Printf("Enable500Mbps succeeded for instance %s, new IP: %s", req.InstanceId, publicIP)
-			ic.wsService.SendSuccess(fmt.Sprintf("Enable500Mbps succeeded for instance %s, new IP: %s", req.InstanceId, publicIP))
+			ic.logService.SendSuccess(fmt.Sprintf("Enable500Mbps succeeded for instance %s, new IP: %s", req.InstanceId, publicIP))
 		}
 	})
 
@@ -360,9 +360,9 @@ func (ic *InstanceController) Disable500Mbps(c *gin.Context) {
 		err := ic.instanceService.Disable500Mbps(req.UserId, req.InstanceId, retainNatGw, retainNlb)
 		if err != nil {
 			log.Printf("Disable500Mbps failed for instance %s: %v", req.InstanceId, err)
-			ic.wsService.SendError(fmt.Sprintf("Disable500Mbps failed for instance %s: %v", req.InstanceId, err))
+			ic.logService.SendError(fmt.Sprintf("Disable500Mbps failed for instance %s: %v", req.InstanceId, err))
 		} else {
-			ic.wsService.SendSuccess(fmt.Sprintf("Disable500Mbps completed for instance %s", req.InstanceId))
+			ic.logService.SendSuccess(fmt.Sprintf("Disable500Mbps completed for instance %s", req.InstanceId))
 		}
 	})
 

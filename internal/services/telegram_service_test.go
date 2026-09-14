@@ -272,3 +272,38 @@ func TestSetMenuButtonCoversChatScope(t *testing.T) {
 		t.Fatalf("菜单按钮应同时覆盖全局默认与会话专属作用域（global=%v chat=%v）", hasGlobal, hasChat)
 	}
 }
+
+// TestStartBotRegistersMenuOnlyOncePerStart 守住「菜单不再重复注册」这个修复。
+//
+// 背景：UpdateConfig 此前在调用 StartBot() 之后又无条件起一个 goroutine 补注册。
+// 从「停止状态」保存配置时，StartBot 本身就会注册一次，补注册再来一次 ——
+// 一次操作发两遍，日志里「Telegram 命令菜单已注册」成对出现，还徒增 Telegram 限频风险。
+//
+// 修复后由「调用前是否已在运行」决定：只有已运行（StartBot 提前返回、没注册）才补注册。
+// 本测试锁定 StartBot 本身的语义：**首次启动注册一次；重复调用（已运行）不再注册**。
+func TestStartBotRegistersMenuOnlyOncePerStart(t *testing.T) {
+	var calls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
+	}))
+	defer srv.Close()
+
+	svc := &TelegramService{botToken: "123:ABC", apiBase: srv.URL, chatID: "12345"}
+	defer svc.StopBot()
+
+	svc.StartBot()
+	afterFirst := atomic.LoadInt32(&calls)
+	if afterFirst == 0 {
+		t.Fatal("StartBot 首次启动应当注册命令菜单与菜单按钮")
+	}
+
+	// 记录首次的请求数，再调一次 StartBot —— 已运行时它应当直接返回，不再注册。
+	svc.StartBot()
+	if got := atomic.LoadInt32(&calls); got != afterFirst {
+		t.Fatalf("已在运行时 StartBot 不应再次注册：首次 %d 次，重复调用后 %d 次", afterFirst, got)
+	}
+	if !svc.IsRunning() {
+		t.Fatal("StartBot 之后 IsRunning 应为 true")
+	}
+}

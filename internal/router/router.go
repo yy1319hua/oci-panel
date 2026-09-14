@@ -39,23 +39,22 @@ func Setup(r *gin.Engine, cfg *config.Config) *Services {
 
 	ociService := services.NewOCIService(cfg)
 	instanceService := services.NewInstanceService(ociService)
-	wsService := services.NewWebSocketService()
+	logService := services.NewLogStreamService()
 	schedulerService := services.NewSchedulerService(ociService)
 	telegramService := services.NewTelegramService(ociService)
 
 	// 把「后端日志」与「API 访问日志」统一汇入实时日志页：
-	//  - logger.SetBroadcaster：所有 log.Print* / slog 输出实时推送到 WebSocket；
+	//  - logger.SetBroadcaster：所有 log.Print* / slog 输出实时推送到日志流；
 	//  - SetAccessLogSink：/api 访问日志同样推送。
-	// 两者都通过 wsService 的广播通道发出，前端实时日志页即可看到。
+	// 两者都通过 logService 的广播通道发出，前端实时日志页即可看到。
 	logger.SetBroadcaster(func(level, message string) {
-		wsService.SendLog(level, message)
+		logService.SendLog(level, message)
 	})
 	middleware.SetAccessLogSink(func(level, message string) {
-		wsService.SendLog(level, message)
+		logService.SendLog(level, message)
 	})
 
-	wsCtrl := controllers.NewWebSocketController(wsService, cfg.Web.AllowOrigins)
-	r.GET("/ws/logs", wsCtrl.HandleWebSocket)
+	logCtrl := controllers.NewLogStreamController(logService, cfg.Web.AllowOrigins)
 
 	api := r.Group("/api")
 	{
@@ -66,8 +65,10 @@ func Setup(r *gin.Engine, cfg *config.Config) *Services {
 			sys.POST("/checkMfaCode", sysCtrl.CheckMfaCode)
 			sys.POST("/requestPasswordReset", sysCtrl.RequestPasswordReset)
 			sys.POST("/resetPassword", sysCtrl.ResetPassword)
-			sys.POST("/wsTicket", wsCtrl.IssueTicket)
-			sys.GET("/recentLogs", wsCtrl.GetRecentLogs)
+			sys.GET("/recentLogs", logCtrl.GetRecentLogs)
+			// 实时日志流（SSE）。作为普通 HTTP 请求，直接复用全局鉴权中间件，
+			// 不再需要 WebSocket 时代那套一次性 ticket（/wsTicket 已随之移除）。
+			sys.GET("/logs/stream", logCtrl.StreamLogs)
 			sys.GET("/getVersion", sysCtrl.GetVersion)
 			sys.GET("/getSysCfg", sysCtrl.GetSysCfg)
 			sys.POST("/updateCacheCfg", sysCtrl.UpdateCacheCfg)
@@ -126,7 +127,7 @@ func Setup(r *gin.Engine, cfg *config.Config) *Services {
 			oci.POST("/vcn/delete", ociCtrl.DeleteVcn)
 		}
 
-		instanceCtrl := controllers.NewInstanceController(instanceService, wsService)
+		instanceCtrl := controllers.NewInstanceController(instanceService, logService)
 		instance := api.Group("/instance")
 		{
 			instance.POST("/list", instanceCtrl.ListInstances)

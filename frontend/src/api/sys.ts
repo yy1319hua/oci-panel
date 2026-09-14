@@ -24,10 +24,6 @@ export interface TokenData {
   username: string
 }
 
-export interface WebSocketTicket {
-  ticket: string
-}
-
 /** 认证状态（MFA / Passkey 是否启用）。 */
 export interface AuthStatus {
   mfaEnabled: boolean
@@ -60,7 +56,6 @@ export interface RecentLogs {
 export const sysApi = {
   login: (account: string, password: string) => post<LoginResultData>('/sys/login', { account, password }),
   checkMfaCode: (ticket: string, code: string) => post<TokenData>('/sys/checkMfaCode', { ticket, code }),
-  issueWebSocketTicket: () => post<WebSocketTicket>('/sys/wsTicket', {}),
   getSysCfg: () => get<SysConfig>('/sys/getSysCfg'),
   updateCacheCfg: (req: { cacheEnabled: boolean; cacheInterval: number }) => post('/sys/updateCacheCfg', req),
   refreshCache: () => post('/sys/refreshCache', {}),

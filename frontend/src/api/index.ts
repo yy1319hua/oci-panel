@@ -9,7 +9,6 @@ export type {
   SysConfig,
   LoginResultData,
   TokenData,
-  WebSocketTicket,
   AuthStatus,
   MfaSecret,
   RecentLogs

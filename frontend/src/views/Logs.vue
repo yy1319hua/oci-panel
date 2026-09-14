@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, shallowRef, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { RefreshCw, Copy, Download, Trash2 } from 'lucide-vue-next'
 import { toast } from '@/composables/useToast'
 import { useAuthStore } from '@/stores/auth'
@@ -9,12 +9,19 @@ import { sysApi } from '@/api'
 
 /**
  * 日志页采用「混合模式」：首屏先走 HTTP 同步拉取服务端缓冲的历史日志，
- * 页面立刻有内容；随后 WebSocket 无缝接上，转为实时推送。
+ * 页面立刻有内容；随后建立 SSE 长连接，转为实时推送。
  *
- * 这样做的原因：WebSocket 建连链路较长（取 ticket → 协议升级 → 回放历史），
- * 只依赖它做首屏，用户会先看到一段「正在连接日志流...」的空白 —— 即使连接
- * 永远失败，那段空白也解释不了「为什么没日志」。而 HTTP 接口成功即代表
- * 服务端活着，失败也能给出明确错误。
+ * 这样做的原因：SSE 建连虽然也会回放历史，但从「发起请求」到「首帧到达」仍有往返延迟。
+ * 只依赖它做首屏，用户会先看到一段空白 —— 即使连接永远失败，那段空白也解释不了
+ * 「为什么没日志」。而 HTTP 接口成功即代表服务端活着，失败也能给出明确错误。
+ *
+ * 【为什么用 SSE 而不是 WebSocket】
+ * WebSocket 需要 HTTP Upgrade 后维持双向长连接，经 Cloudflare 隧道（尤其跨境链路）
+ * 时非常脆弱，容易被中途掐断成 502；且服务端向同一连接并发写会 panic 崩进程。
+ * SSE 是普通 HTTP 长连接，走标准 HTTP 语义，Cloudflare 支持稳定得多。
+ *
+ * 这里用 fetch + ReadableStream 而非浏览器原生 EventSource，原因是 EventSource
+ * 无法携带自定义请求头 —— 而本接口要求 Authorization: Bearer <token>。
  */
 
 type LogLevel = 'INFO' | 'WARN' | 'ERROR' | 'DEBUG' | 'SUCCESS'
@@ -29,17 +36,17 @@ interface LogEntry {
 const authStore = useAuthStore()
 const logs = ref<LogEntry[]>([])
 const isConnected = ref(false)
-const ws = shallowRef<WebSocket | null>(null)
 const connecting = ref(false)
 const loadingHistory = ref(false)
 const logConsole = ref<HTMLElement>()
 
 let disposed = false
 let manualClose = false // 用户主动断开后不再自动重连
-let socketSeq = 0 // 当前有效 socket 序号，用于作废过期回调
+let streamSeq = 0 // 当前有效流的序号，用于作废过期回调
 let retries = 0 // 自动重连次数
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let seqCounter = 0 // 日志条目的稳定唯一键
+let abortController: AbortController | null = null // 用于主动中断 SSE 流
 
 // 回放收口机制：服务端在建连后会连续推历史行，之后才转入实时。
 // 两种行没有分隔标志，故用「静默窗口」判定回放结束 —— 一旦指定时间内
@@ -243,101 +250,148 @@ const scheduleReconnect = () => {
   clearReconnect()
   reconnectTimer = setTimeout(() => {
     retries++
-    connectWebSocket()
+    connectLogStream()
   }, RECONNECT_DELAY)
 }
 
-const buildWsUrl = (ticket: string) => {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${protocol}//${window.location.host}/ws/logs?ticket=${encodeURIComponent(ticket)}`
+/**
+ * 解析一段 SSE 文本流，把完整的帧交给 onFrame 处理，返回尚未收完的残留文本。
+ *
+ * SSE 帧之间以空行（\n\n）分隔；每条帧内可能含多行 `data: xxx`，
+ * 以及 `:` 开头的注释行（如建连握手 `: open`、心跳 `: keepalive`）——注释行需忽略。
+ *
+ * 【为什么必须自己解析而非等整段响应】SSE 是流式的，服务端会持续 flush。
+ * 若用 response.text() 一次性读取，等于等到连接结束才拿到数据，实时性完全丧失。
+ * 这里按块累积、按空行切帧，保证每条日志一到就渲染。
+ */
+const consumeSSEBuffer = (buffer: string, onFrame: (data: string) => void): string => {
+  // 统一换行，兼容服务端可能出现的 \r\n。
+  let buf = buffer.replace(/\r\n/g, '\n')
+  let sep = buf.indexOf('\n\n')
+  while (sep !== -1) {
+    const frame = buf.slice(0, sep)
+    buf = buf.slice(sep + 2)
+    handleSSEFrame(frame, onFrame)
+    sep = buf.indexOf('\n\n')
+  }
+  return buf
 }
 
-const connectWebSocket = async () => {
+/** 处理单个 SSE 帧：拼接所有 data 行，忽略注释行与事件名。 */
+const handleSSEFrame = (frame: string, onFrame: (data: string) => void) => {
+  const dataLines: string[] = []
+  for (const line of frame.split('\n')) {
+    if (!line || line.startsWith(':')) continue // 空行 / 注释（心跳）
+    if (line.startsWith('data:')) {
+      // 规范：data 字段值前置一个空格需被去掉（若存在）。
+      dataLines.push(line.slice(5).replace(/^ /, ''))
+    }
+    // event: / id: / retry: 字段本页暂不消费，直接忽略。
+  }
+  if (dataLines.length) onFrame(dataLines.join('\n'))
+}
+
+/**
+ * 建立 SSE 日志流。
+ *
+ * 用 fetch + ReadableStream 读 text/event-stream：相比 EventSource 的好处是
+ * 可以自定义 Authorization 请求头（EventSource 不支持），与项目其余接口共用同一套 JWT。
+ */
+const connectLogStream = async () => {
   if (disposed || manualClose) return
-  if (ws.value || connecting.value) return
-  const seq = ++socketSeq
+  if (abortController) return
+  if (!authStore.token) return
+
+  const seq = ++streamSeq
   connecting.value = true
+  const controller = new AbortController()
+  abortController = controller
 
   try {
-    if (!authStore.token) {
-      connecting.value = false
-      return
-    }
-    const ticketResponse = await sysApi.issueWebSocketTicket()
-    if (disposed || seq !== socketSeq || manualClose) return
-    const socket = new WebSocket(buildWsUrl(ticketResponse.data.ticket))
-    ws.value = socket
+    const res = await fetch('/api/sys/logs/stream', {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${authStore.token}`,
+        Accept: 'text/event-stream'
+      },
+      signal: controller.signal
+    })
 
-    socket.onopen = () => {
-      if (seq !== socketSeq || ws.value !== socket) return
-      connecting.value = false
-      isConnected.value = true
-      retries = 0
-      // 建连后服务端会立刻回放历史缓冲。这些行与 HTTP 首屏拉取的
-      // 内容高度重叠，先暂存起来走合并去重，避免页面出现成对重复日志。
-      replayBuffer = []
-      replaying = true
-    }
+    if (disposed || seq !== streamSeq) return
 
-    socket.onmessage = event => {
-      if (seq !== socketSeq || ws.value !== socket) return
-      if (replaying) {
-        // 服务端回放的历史行与实时行没有显式分隔标志，用一个小延迟窗口
-        // 收口：把建连后极短时间内到达的行视为回放批次，统一去重合并。
-        replayBuffer.push(event.data)
-        scheduleReplayFlush()
-        return
+    if (!res.ok || !res.body) {
+      // 401 由全局拦截处理不到（非 axios），这里显式提示重登。
+      if (res.status === 401) {
+        authStore.logout?.()
       }
-      appendLine(event.data)
+      throw new Error(`日志流连接失败（HTTP ${res.status}）`)
     }
 
-    socket.onerror = () => {
-      if (seq !== socketSeq || ws.value !== socket) return
-      // 错误后紧接着会触发 onclose，重连逻辑统一在那里处理。
-    }
+    // 收到响应头即视为已连接；服务端会立刻推一个 ": open" 握手帧。
+    connecting.value = false
+    isConnected.value = true
+    retries = 0
 
-    socket.onclose = () => {
-      if (seq !== socketSeq) return
+    // 建连后服务端会立刻回放历史缓冲。这些行与 HTTP 首屏拉取的内容高度重叠，
+    // 先暂存起来走合并去重，避免页面出现成对重复日志。
+    replayBuffer = []
+    replaying = true
+
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder('utf-8')
+    let pending = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (disposed || seq !== streamSeq) return
+      pending += decoder.decode(value, { stream: true })
+      pending = consumeSSEBuffer(pending, data => {
+        if (replaying) {
+          // 回放行与实时行无显式分隔，用静默窗口收口：建连后极短时间内到达的行
+          // 视为回放批次，统一去重合并；之后的行按实时追加。
+          replayBuffer.push(data)
+          scheduleReplayFlush()
+        } else {
+          appendLine(data)
+        }
+      })
+    }
+  } catch (err) {
+    // 主动中断（切页/手动断开）导致的 abort 不算错误。
+    if (controller.signal.aborted || disposed || seq !== streamSeq) return
+    // 其余情况（网络断开/隧道抖动）交给重连。
+  } finally {
+    if (seq === streamSeq) {
       flushReplay()
-      ws.value = null
+      abortController = null
       connecting.value = false
       isConnected.value = false
       if (!manualClose && !disposed) scheduleReconnect()
     }
-  } catch {
-    if (!disposed && seq === socketSeq && !manualClose) {
-      scheduleReconnect()
-    }
-  } finally {
-    if (seq === socketSeq && !ws.value) connecting.value = false
   }
 }
 
-const disconnectWebSocket = () => {
+const disconnectLogStream = () => {
   manualClose = true
   clearReconnect()
   flushReplay()
-  socketSeq++ // 作废当前 socket 的所有回调
+  streamSeq++ // 作废当前流的所有回调
   connecting.value = false
   isConnected.value = false
-  const socket = ws.value
-  ws.value = null
-  if (socket) {
-    socket.onopen = null
-    socket.onmessage = null
-    socket.onerror = null
-    socket.onclose = null
-    socket.close()
+  if (abortController) {
+    abortController.abort()
+    abortController = null
   }
 }
 
 /** 手动刷新：重新拉一次服务端历史（清掉当前视图），并确保实时流已连上。 */
 const refresh = async () => {
   await loadHistory()
-  if (!ws.value && !connecting.value) {
+  if (!abortController && !connecting.value) {
     manualClose = false
     retries = 0
-    connectWebSocket()
+    connectLogStream()
   }
   toast.success('日志已刷新')
 }
@@ -408,10 +462,10 @@ watch(autoRefresh, enabled => {
 })
 
 onMounted(async () => {
-  // 先同步拉历史（立即出内容），再升级为 WebSocket 实时推送。
+  // 先同步拉历史（立即出内容），再建立 SSE 长连接转实时推送。
   manualClose = false
   await loadHistory()
-  connectWebSocket()
+  connectLogStream()
 })
 
 onUnmounted(() => {
@@ -421,7 +475,7 @@ onUnmounted(() => {
     clearTimeout(replayTimer)
     replayTimer = null
   }
-  disconnectWebSocket()
+  disconnectLogStream()
 })
 </script>
 

@@ -147,15 +147,23 @@ func (s *TelegramService) UpdateConfig(botToken, chatID string, enabled bool, ap
 	s.mu.Unlock()
 
 	if enabled && botToken != "" && chatID != "" {
+		// 【为什么用「调用前是否已在运行」来决定要不要补注册】
+		// StartBot 首次启动时会做 setMyCommands + setMenuButton；若 bot 已在运行，
+		// 它直接 return，不做任何注册。所以只有「已在运行」这一种情况下，
+		// 改配置才需要额外补一次注册（可能是换了 bot token 或反代地址，
+		// 命令菜单与菜单按钮的归属随之改变）。
+		//
+		// 此前是无条件再起一个 goroutine 补注册，导致「从停止状态保存配置」时
+		// 一次操作注册两遍（StartBot 一次 + 补注册一次）——表现为日志里
+		// 「Telegram 命令菜单已注册」成对出现，且徒增 Telegram 限频风险。
+		wasRunning := s.IsRunning()
 		s.StartBot()
-		// StartBot 在「已在运行」时会提前返回，此时它内部的 setMyCommands / setMenuButton
-		// 不会执行。但配置可能刚换了 bot token 或反代地址 —— 这两者都会改变命令菜单
-		// 与菜单按钮的归属，必须重新注册，否则用户在新 bot 上看到的仍是空菜单 / 旧按钮。
-		// 该调用幂等且异步执行，不会拖慢配置保存。
-		go func() {
-			s.setMyCommands()
-			s.setMenuButton()
-		}()
+		if wasRunning {
+			go func() {
+				s.setMyCommands()
+				s.setMenuButton()
+			}()
+		}
 	} else {
 		s.StopBot()
 	}
