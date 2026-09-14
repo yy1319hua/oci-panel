@@ -64,13 +64,20 @@ func NewLogStreamService() *LogStreamService {
 // （订阅者集合持续增长 → 广播时遍历开销变大）。
 func (s *LogStreamService) Subscribe() (*logSubscriber, bool) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if len(s.subs) >= s.subMax {
+		s.mu.Unlock()
 		return nil, false
 	}
 	sub := &logSubscriber{ch: make(chan string, logSubBufferSize)}
 	s.subs[sub] = struct{}{}
-	log.Printf("Log subscriber connected. Total subscribers: %d", len(s.subs))
+	total := len(s.subs)
+	s.mu.Unlock()
+
+	// 【必须在释放锁之后再写日志】logger 已把 log.Print* 接到广播回调，
+	// 而广播回调会回头调用 BroadcastMessage 去拿同一把 s.mu。
+	// 若在持锁状态下 log.Printf，就会重入这把不可重入的锁而永久死锁 ——
+	// 且锁不释放会让此后所有 HTTP 请求（AccessLogger 每条都写日志）全部卡死。
+	s.logOutsideLock("Log subscriber connected. Total subscribers: %d", total)
 	return sub, true
 }
 
@@ -83,7 +90,7 @@ func (s *LogStreamService) Unsubscribe(sub *logSubscriber) {
 		return
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	total := 0
 	if _, ok := s.subs[sub]; ok {
 		delete(s.subs, sub)
 		if !sub.closed {
@@ -91,7 +98,21 @@ func (s *LogStreamService) Unsubscribe(sub *logSubscriber) {
 			close(sub.ch)
 		}
 	}
-	log.Printf("Log subscriber disconnected. Total subscribers: %d", len(s.subs))
+	total = len(s.subs)
+	s.mu.Unlock()
+
+	// 同 Subscribe：日志必须在锁外写，否则会与广播回调争同一把锁而死锁。
+	s.logOutsideLock("Log subscriber disconnected. Total subscribers: %d", total)
+}
+
+// logOutsideLock 是「绝不持锁写日志」这一约束的统一出口。
+//
+// 背景：logger.SetBroadcaster 会把所有 log.Print* 转发到 BroadcastMessage，
+// 而 BroadcastMessage 内部要拿 s.mu。因此 LogStreamService 中任何持锁路径
+// 都不能调用 log.Printf —— 必须收敛到这里，在锁外统一输出。
+// 这个方法强制调用方先在锁内算好参数、释放锁后再传入，避免再次踩坑。
+func (s *LogStreamService) logOutsideLock(format string, args ...any) {
+	log.Printf(format, args...)
 }
 
 // Messages 暴露订阅者的接收 channel 供消费端 select。
