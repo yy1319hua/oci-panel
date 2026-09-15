@@ -133,22 +133,18 @@ public_url = "https://panel.example.com"
 
 ### 构建运行
 
-**Linux/macOS:**
-
 ```bash
-./build.sh
+# 前端
+cd frontend && npm install && npm run build && cd ..
+
+# 后端（版本号由 tag 注入，见下方「版本号」一节）
+go build -ldflags "-X github.com/adiecho/oci-panel/internal/version.AppVersion=$(git describe --tags --always)" -o oci-panel main.go
+
 ./oci-panel
 ```
 
-**Windows:**
-
-```bash
-build.bat
-oci-panel.exe
-```
-
-> `build.sh` 会先构建前端（`frontend/dist/`）再编译后端。其提示信息中的端口
-> 是历史遗留文案，实际监听端口以 `config.toml` 的 `[server].port` 为准（默认 `8999`）。
+> 监听端口以 `config.toml` 的 `[server].port` 为准（默认 `8999`）。
+> 生产环境推荐直接用 GHCR 上的镜像（见 `docker-compose.yml`），无需本地构建。
 
 ### 访问面板
 
@@ -191,9 +187,6 @@ cd frontend && npx vue-tsc --noEmit   # 前端类型检查
 ```bash
 go build -ldflags "-X github.com/adiecho/oci-panel/internal/version.AppVersion=$(git describe --tags --always)" -o oci-panel main.go
 ```
-
-> 注：仓库中的 `build.sh` 目前未做版本注入（产出的是 `version.go` 中的默认常量
-> `1.0.8`）。若需版本号跟随 tag，请使用上面带 `-ldflags` 的命令构建。
 
 ## License
 
