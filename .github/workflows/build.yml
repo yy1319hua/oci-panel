@@ -68,14 +68,20 @@ jobs:
 
       # 版本号唯一数据源：git tag。
       # 通过 -ldflags 注入到 version.AppVersion，前后端与 Telegram 均读取该值。
+      #
+      # ⚠️ 两个硬性前提，缺一不可：
+      #   1. AppVersion 必须是 **var**，写成 const 的话 -X 会静默失效（Go 把
+      #      const 内联到使用点，linker 没有可覆盖的符号，且不报错）。
+      #   2. 注入的是**不带 v 前缀**的纯数字版本号 —— 展示层各自负责加 v
+      #      （前端模板写的是 `OCI Panel · v{{ version }}`），重复加会显示成 "v v1.0.28"。
       - name: Resolve version
         id: version
         run: |
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            VERSION="${GITHUB_REF_NAME}"
+            VERSION="${GITHUB_REF_NAME#v}"
           else
-            # 无 tag 时回退到 describe（如 v1.0.8-3-gabcdef），保证版本可追溯。
-            VERSION="$(git describe --tags --always)"
+            # 无 tag 时回退到 describe（如 v1.0.8-3-gabcdef），同样去 v 前缀。
+            VERSION="$(git describe --tags --always | sed 's/^v//')"
           fi
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "resolved version: ${VERSION}"

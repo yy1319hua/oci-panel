@@ -128,6 +128,12 @@ const formatBytes = (bytes: number) => {
   return { value: v.toFixed(2), unit: units[i] }
 }
 
+/** 拼好的「值 + 单位」，用于需要多次展示字节数的明细行，避免模板里重复解构 */
+const fmtBytes = (bytes: number) => {
+  const { value, unit } = formatBytes(bytes)
+  return `${value} ${unit}`
+}
+
 const quickActions = [
   {
     title: '流量查询',
@@ -435,15 +441,19 @@ onMounted(() => {
                       <span class="truncate text-foreground/90">{{ inst.name }}</span>
                     </div>
                     <span class="shrink-0 text-muted-foreground tabular-nums">
-                      {{ formatBytes(inst.total).value }} {{ formatBytes(inst.total).unit }} · {{ inst.pct }}%
+                      {{ fmtBytes(inst.total) }} · {{ inst.pct }}%
                     </span>
                   </div>
                   <div class="h-2 rounded-full bg-secondary overflow-hidden mt-1.5">
                     <div class="h-full rounded-full" :style="{ width: inst.pct + '%', background: inst.color }"></div>
                   </div>
+                  <div class="mt-1 flex items-center gap-3 text-xs tabular-nums">
+                    <span class="text-success">↓ 入 {{ fmtBytes(inst.inbound) }}</span>
+                    <span class="text-warning">↑ 出 {{ fmtBytes(inst.outbound) }}</span>
+                  </div>
                 </div>
-                <!-- 桌面端：保留原三列对齐 -->
-                <div class="hidden lg:grid lg:grid-cols-[160px_1fr_auto] lg:items-center lg:gap-3">
+                <!-- 桌面端：三列对齐，第二行跨第 2~3 列展示入/出站明细 -->
+                <div class="hidden lg:grid lg:grid-cols-[160px_1fr_auto] lg:items-center lg:gap-x-3 lg:gap-y-1">
                   <div class="flex items-center gap-2 min-w-0">
                     <span class="w-2.5 h-2.5 rounded-full shrink-0" :style="{ background: inst.color }"></span>
                     <span class="truncate text-foreground/90">{{ inst.name }}</span>
@@ -452,7 +462,15 @@ onMounted(() => {
                     <div class="h-full rounded-full" :style="{ width: inst.pct + '%', background: inst.color }"></div>
                   </div>
                   <div class="text-right text-muted-foreground tabular-nums">
-                    {{ formatBytes(inst.total).value }} {{ formatBytes(inst.total).unit }} · {{ inst.pct }}%
+                    {{ fmtBytes(inst.total) }} · {{ inst.pct }}%
+                  </div>
+                  <div class="lg:col-start-2 lg:col-span-2 flex items-center gap-4 text-xs tabular-nums">
+                    <span class="text-success">↓ 入站 {{ fmtBytes(inst.inbound) }}</span>
+                    <span class="text-warning">↑ 出站 {{ fmtBytes(inst.outbound) }}</span>
+                    <span v-if="inst.total > 0" class="text-muted-foreground">
+                      占比 入 {{ ((inst.inbound / inst.total) * 100).toFixed(0) }}% · 出
+                      {{ ((inst.outbound / inst.total) * 100).toFixed(0) }}%
+                    </span>
                   </div>
                 </div>
               </div>

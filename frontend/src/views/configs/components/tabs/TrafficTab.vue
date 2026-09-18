@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { Loader2, BarChart3 } from 'lucide-vue-next'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -12,7 +13,7 @@ interface ValueLabel {
   label: string
 }
 
-defineProps<{
+const props = defineProps<{
   form: { instanceId: string; vnicId: string; startTime: string; endTime: string }
   condition: { instances: ValueLabel[] }
   vnics: ValueLabel[]
@@ -24,13 +25,54 @@ defineEmits<{
   query: []
 }>()
 
-// 后端返回的数值单位是 MB；流量大时自动换算成 GB，避免出现一长串数字。
-const formatTraffic = (mb?: string) => {
+// 后端返回的数值单位是 MB；流量大时自动换算成 GB/TB，避免出现一长串数字。
+const formatTraffic = (mb?: string | number) => {
   const v = Number(mb)
-  if (!mb || isNaN(v)) return '0'
+  if (mb === undefined || mb === null || mb === '' || isNaN(v)) return '0'
+  if (v >= 1024 * 1024) return `${(v / 1024 / 1024).toFixed(2)} TB`
   if (v >= 1024) return `${(v / 1024).toFixed(2)} GB`
   return `${v.toFixed(2)} MB`
 }
+
+const toMb = (v?: string) => {
+  const n = Number(v)
+  return v === undefined || v === null || v === '' || isNaN(n) ? 0 : n
+}
+
+/**
+ * 表格底部的汇总。
+ *
+ * ⚠️ 必须**先按原始 MB 求和、最后再统一换算单位**——不能把每行显示出来的
+ * GB 值相加：formatTraffic 已经 toFixed(2) 舍入过，逐行相加会累积误差，
+ * 行数一多差额可能达到好几个 GB。
+ */
+const summary = computed(() => {
+  const inbound = props.traffic?.inbound || []
+  const outbound = props.traffic?.outbound || []
+  const list = (arr: string[]) => arr.map(toMb)
+  const sum = (arr: number[]) => arr.reduce((s, v) => s + v, 0)
+  const inboundMb = sum(list(inbound))
+  const outboundMb = sum(list(outbound))
+  const points = props.traffic?.time?.length || 0
+  return {
+    points,
+    inboundMb,
+    outboundMb,
+    totalMb: inboundMb + outboundMb,
+    // 单点峰值：判断有没有突发流量用
+    peakInboundMb: list(inbound).reduce((m, v) => (v > m ? v : m), 0),
+    peakOutboundMb: list(outbound).reduce((m, v) => (v > m ? v : m), 0)
+  }
+})
+
+// 汇总结果对应的查询区间，让用户明确这份合计覆盖的时间范围
+const queryRange = computed(() => {
+  const s = props.form?.startTime
+  const e = props.form?.endTime
+  if (!s && !e) return ''
+  const fmt = (v: string) => (v ? v.replace('T', ' ') : '—')
+  return `${fmt(s)} ~ ${fmt(e)}`
+})
 </script>
 
 <template>
@@ -115,8 +157,31 @@ const formatTraffic = (mb?: string) => {
               <TableCell class="text-primary">{{ formatTraffic(traffic.outbound[index]) }}</TableCell>
             </TableRow>
           </TableBody>
+
+          <!--
+            汇总：tfoot 必须紧跟 tbody（或放在 tbody 之前），不能塞进 overflow 容器外，
+            否则就不是同一个表格行了。
+          -->
+          <tfoot v-if="summary.points">
+            <TableRow class="border-t-2 border-border bg-muted/40 font-semibold">
+              <TableCell class="text-foreground">
+                合计
+                <span class="ml-1 font-normal text-xs text-muted-foreground">{{ summary.points }} 个时间点</span>
+              </TableCell>
+              <TableCell class="text-success">{{ formatTraffic(summary.inboundMb) }}</TableCell>
+              <TableCell class="text-primary">{{ formatTraffic(summary.outboundMb) }}</TableCell>
+            </TableRow>
+            <TableRow class="border-t-0 text-xs">
+              <TableCell class="text-muted-foreground">入出合计 {{ formatTraffic(summary.totalMb) }}</TableCell>
+              <TableCell class="text-success/80">峰值 {{ formatTraffic(summary.peakInboundMb) }}</TableCell>
+              <TableCell class="text-primary/80">峰值 {{ formatTraffic(summary.peakOutboundMb) }}</TableCell>
+            </TableRow>
+          </tfoot>
         </Table>
       </div>
+      <p v-if="queryRange" class="mt-3 text-xs text-muted-foreground">
+        汇总区间：{{ queryRange }} · 入站不计入 Oracle 免费额度，仅出站超出部分计费
+      </p>
     </Card>
     <div v-else class="text-center py-16">
       <div class="w-20 h-20 mx-auto mb-4 rounded-full bg-muted/50 flex items-center justify-center">

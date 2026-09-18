@@ -9,13 +9,18 @@ RUN npm run build
 # Stage 2: Build backend
 FROM --platform=$BUILDPLATFORM golang:1.24-alpine AS backend-builder
 ARG TARGETARCH
+# 版本号走 --build-arg VERSION=1.0.29 注入；不传则为 dev。
+# 注意 AppVersion 在代码里必须是 var（-X 对 const 无效，且不会报错）。
+ARG VERSION=dev
 WORKDIR /app
 COPY go.mod go.sum ./
 ENV GOPROXY=https://goproxy.cn,direct \
     GOSUMDB=off
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -ldflags "-s -w" -o oci-panel main.go
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build \
+      -ldflags "-s -w -X github.com/adiecho/oci-panel/internal/version.AppVersion=${VERSION}" \
+      -o oci-panel main.go
 
 # Stage 3: Final minimal image
 FROM alpine:3.21
