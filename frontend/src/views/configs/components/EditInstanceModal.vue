@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, reactive, watch } from 'vue'
-import { Loader2, AlertTriangle, Settings, HardDrive, Globe, Wrench, Zap } from 'lucide-vue-next'
+import { Loader2, AlertTriangle, Settings, HardDrive, Globe, Wrench } from 'lucide-vue-next'
 import { instanceApi } from '@/api'
 import { toast } from '@/composables/useToast'
 import { Button } from '@/components/ui/button'
@@ -40,10 +40,7 @@ const form = reactive({
   bootVolumeSize: 50,
   vpusPerGB: 10,
   currentIpv6: '',
-  keepBackup: false,
-  sshPort: 22,
-  retainNatGw: false,
-  retainNlb: false
+  keepBackup: false
 })
 
 watch(
@@ -160,44 +157,6 @@ const startAutoRescue = async () => {
     close()
   } catch (error: any) {
     toast.error(error.message || '启动失败')
-  } finally {
-    updating.value = false
-  }
-}
-
-const enable500Mbps = async () => {
-  if (!confirm('此操作将创建NAT网关和网络负载均衡器来实现500Mbps下行带宽。仅AMD E2.1.Micro实例支持，确定继续吗？'))
-    return
-  updating.value = true
-  try {
-    await instanceApi.enable500Mbps({
-      userId: props.userId,
-      instanceId: props.instance?.id,
-      sshPort: form.sshPort || 22
-    })
-    toast.success('500Mbps开启任务已启动')
-    close()
-  } catch (error: any) {
-    toast.error(error.message || '开启失败')
-  } finally {
-    updating.value = false
-  }
-}
-
-const disable500Mbps = async () => {
-  if (!confirm('确定要关闭500Mbps下行带宽吗？')) return
-  updating.value = true
-  try {
-    await instanceApi.disable500Mbps({
-      userId: props.userId,
-      instanceId: props.instance?.id,
-      retainNatGw: form.retainNatGw,
-      retainNlb: form.retainNlb
-    })
-    toast.success('500Mbps关闭任务已启动')
-    close()
-  } catch (error: any) {
-    toast.error(error.message || '关闭失败')
   } finally {
     updating.value = false
   }
@@ -324,41 +283,6 @@ const disable500Mbps = async () => {
             <Loader2 v-if="updating" class="w-4 h-4 animate-spin" />
             开始救援
           </Button>
-        </div>
-      </Card>
-
-      <!-- 500Mbps -->
-      <Card class="p-4 bg-muted/30">
-        <h4 class="text-sm font-semibold mb-3 flex items-center gap-2">
-          <Zap class="w-4 h-4 text-primary" />
-          500Mbps下行带宽 (仅AMD实例)
-        </h4>
-        <div class="bg-info/10 border border-info/30 rounded-lg p-3 mb-3 text-xs text-info">
-          通过NAT网关和网络负载均衡器实现500Mbps下行带宽。仅支持AMD E2.1.Micro实例。
-        </div>
-        <div class="flex items-center gap-2 mb-3">
-          <label class="text-sm">SSH端口:</label>
-          <Input v-model.number="form.sshPort" type="number" min="1" max="65535" class="w-24" placeholder="22" />
-        </div>
-        <div class="flex gap-2 mb-3">
-          <Button variant="success" class="flex-1" :disabled="updating" @click="enable500Mbps">
-            <Loader2 v-if="updating" class="w-4 h-4 animate-spin" />
-            开启500Mbps
-          </Button>
-          <Button variant="destructive" class="flex-1" :disabled="updating" @click="disable500Mbps">
-            <Loader2 v-if="updating" class="w-4 h-4 animate-spin" />
-            关闭500Mbps
-          </Button>
-        </div>
-        <div class="flex items-center gap-4 text-xs text-muted-foreground">
-          <label class="flex items-center gap-1 cursor-pointer">
-            <Checkbox v-model="form.retainNatGw" />
-            <span>保留NAT网关</span>
-          </label>
-          <label class="flex items-center gap-1 cursor-pointer">
-            <Checkbox v-model="form.retainNlb" />
-            <span>保留负载均衡器</span>
-          </label>
         </div>
       </Card>
     </div>

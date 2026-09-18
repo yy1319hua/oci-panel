@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { Loader2, Server, Play, Square, RotateCcw, Globe, Settings, Terminal, Trash2 } from 'lucide-vue-next'
+import { Loader2, Server, Play, Square, RotateCcw, Globe, Settings, Trash2 } from 'lucide-vue-next'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import type { Instance } from '@/views/configs/types'
 
 // 配置详情「实例列表」标签页（C7 从 Configs.vue 抽出，纯展示）。
-// 所有实例操作经 emit 上抛由抽屉处理（控制/删除/换 IP/编辑/CloudShell），
+// 所有实例操作经 emit 上抛由抽屉处理（控制/删除/换 IP/编辑），
 // 与拆分前的语义、确认弹窗、loading 标识完全一致。
 defineProps<{
   instances: Instance[]
@@ -19,7 +19,6 @@ defineEmits<{
   terminate: [instanceId: string]
   'change-ip': [instanceId: string]
   edit: [instance: Instance]
-  'cloud-shell': [instanceId: string]
 }>()
 </script>
 
@@ -117,10 +116,6 @@ defineEmits<{
         <Button size="sm" variant="outline" @click="$emit('edit', instance)">
           <Settings class="w-3.5 h-3.5" />
           编辑配置
-        </Button>
-        <Button size="sm" variant="outline" @click="$emit('cloud-shell', instance.id)">
-          <Terminal class="w-3.5 h-3.5" />
-          Cloud Shell
         </Button>
         <Button
           size="sm"

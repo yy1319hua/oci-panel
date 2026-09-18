@@ -138,7 +138,7 @@ const chartDays = computed(() => {
             v-for="d in chartDays"
             :key="d.date"
             class="flex-1 rounded-t transition-all"
-            :class="d.amount > 0 ? 'bg-destructive' : 'bg-slate-700'"
+            :class="d.amount > 0 ? 'bg-destructive' : 'bg-muted'"
             :style="{ height: (d.amount > 0 ? barPct(d.amount) : 2) + '%' }"
             :title="`${d.date} · ${formatAmount(d.amount, d.currency)}`"
           ></div>

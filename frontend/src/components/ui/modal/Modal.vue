@@ -3,7 +3,7 @@ import { X } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 
 /**
- * 统一模态外壳（C8）：抽取此前在 4 个弹窗（CloudShell/EditInstance/SecurityList/VolumeEdit
+ * 统一模态外壳（C8）：抽取此前在 3 个弹窗（EditInstance/SecurityList/VolumeEdit
  * 及其内嵌的「添加规则」弹窗）中逐字重复的脚手架——
  * Teleport → fade 过渡 → 遮罩（点击空白关闭）→ 面板（bg-card rounded-xl shadow-2xl border）
  * → 标题栏（标题 + 右上角 X）。面板正文与底部按钮仍由各调用方通过默认插槽提供，

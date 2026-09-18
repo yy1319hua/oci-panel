@@ -17,12 +17,11 @@ import TrafficTab from './tabs/TrafficTab.vue'
 import CostTab from './tabs/CostTab.vue'
 import UserListCard from './UserListCard.vue'
 import EditInstanceModal from './EditInstanceModal.vue'
-import CloudShellModal from './CloudShellModal.vue'
 import VolumeEditModal from './VolumeEditModal.vue'
 import SecurityListModal from './SecurityListModal.vue'
 
 // 配置详情抽屉（C7 从 Configs.vue 抽出）：承载详情数据加载、5 个标签页、用户管理、实例操作、
-// 流量查询与 4 个子组件弹窗。逻辑由 Configs.vue 原样迁移（加载时序、懒加载 watch、刷新派发不变），
+// 流量查询与 3 个子组件弹窗。逻辑由 Configs.vue 原样迁移（加载时序、懒加载 watch、刷新派发不变），
 // 标签页改为纯展示子组件、动作经事件回传，行为与拆分前一致。
 const props = defineProps<{
   open: boolean
@@ -71,13 +70,11 @@ const userForm = ref({ email: '', dbUserName: '', description: '' })
 
 // 子组件弹窗状态
 const showEditInstanceModal = ref(false)
-const showCloudShellModal = ref(false)
 const showVolumeEditModal = ref(false)
 const showSecurityListModal = ref(false)
 const selectedInstance = ref<Instance | null>(null)
 const selectedVolume = ref<any>(null)
 const selectedVcn = ref<any>(null)
-const cloudShellInstanceId = ref('')
 
 const tabs = [
   { key: 'basic', label: '基本信息', icon: Settings },
@@ -421,10 +418,6 @@ const openEditInstance = (instance: Instance) => {
   selectedInstance.value = instance
   showEditInstanceModal.value = true
 }
-const openCloudShell = (instanceId: string) => {
-  cloudShellInstanceId.value = instanceId
-  showCloudShellModal.value = true
-}
 const openVolumeEdit = (volume: any) => {
   selectedVolume.value = volume
   showVolumeEditModal.value = true
@@ -509,7 +502,6 @@ const openSecurityList = (vcn: any) => {
                   @terminate="terminateInstance"
                   @change-ip="changeIP"
                   @edit="openEditInstance"
-                  @cloud-shell="openCloudShell"
                 />
               </div>
 
@@ -591,11 +583,6 @@ const openSecurityList = (vcn: any) => {
     :instance="selectedInstance"
     :user-id="configDetails?.userId || ''"
     @refresh="loadInstances(true)"
-  />
-  <CloudShellModal
-    v-model:open="showCloudShellModal"
-    :instance-id="cloudShellInstanceId"
-    :user-id="configDetails?.userId || ''"
   />
   <VolumeEditModal
     v-model:open="showVolumeEditModal"

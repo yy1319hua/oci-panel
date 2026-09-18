@@ -14,11 +14,5 @@ export const instanceApi = {
     post('/instance/updateBootVolume', req),
   attachIPv6: (req: { userId: string; instanceId?: string }) => post<{ ipv6?: string }>('/instance/attachIPv6', req),
   autoRescue: (req: { userId: string; instanceId?: string; instanceName: string; keepBackup: boolean }) =>
-    post('/instance/autoRescue', req),
-  enable500Mbps: (req: { userId: string; instanceId?: string; sshPort: number }) =>
-    post('/instance/enable500Mbps', req),
-  disable500Mbps: (req: { userId: string; instanceId?: string; retainNatGw: boolean; retainNlb: boolean }) =>
-    post('/instance/disable500Mbps', req),
-  createCloudShell: (req: { userId: string; instanceId: string; publicKey: string }) =>
-    post<{ connectionId?: string; connectionString?: string }>('/instance/createCloudShell', req)
+    post('/instance/autoRescue', req)
 }

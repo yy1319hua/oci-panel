@@ -1,10 +1,15 @@
 package router
 
 import (
+	"fmt"
+	"net/http"
+	"strings"
+
 	"github.com/adiecho/oci-panel/internal/config"
 	"github.com/adiecho/oci-panel/internal/controllers"
 	"github.com/adiecho/oci-panel/internal/logger"
 	"github.com/adiecho/oci-panel/internal/middleware"
+	"github.com/adiecho/oci-panel/internal/models"
 	"github.com/adiecho/oci-panel/internal/services"
 	"github.com/gin-gonic/gin"
 )
@@ -24,7 +29,11 @@ func Setup(r *gin.Engine, cfg *config.Config) *Services {
 	// 静态资源 - 前端构建文件
 	// assets 文件名带内容 hash，可安全长缓存（内容变了文件名必变）
 	r.Static("/assets", "./frontend/dist/assets")
+	// 站点图标。必须逐个显式映射：NoRoute 的 SPA 兜底会把未映射的路径当成前端路由，
+	// 返回 index.html（200 + text/html），否则浏览器拿到的"图标"其实是网页。
 	r.StaticFile("/favicon.ico", "./frontend/dist/favicon.ico")
+	r.StaticFile("/favicon.svg", "./frontend/dist/favicon.svg")
+	r.StaticFile("/apple-touch-icon.png", "./frontend/dist/apple-touch-icon.png")
 
 	// serveIndex 输出 index.html 并禁止缓存，确保每次部署后浏览器都拉取到最新资源清单
 	serveIndex := func(c *gin.Context) {
@@ -139,11 +148,8 @@ func Setup(r *gin.Engine, cfg *config.Config) *Services {
 			instance.POST("/changeIP", instanceCtrl.ChangePublicIP)
 			instance.POST("/updateConfig", instanceCtrl.UpdateInstanceConfig)
 			instance.POST("/updateBootVolume", instanceCtrl.UpdateBootVolume)
-			instance.POST("/createCloudShell", instanceCtrl.CreateCloudShell)
 			instance.POST("/attachIPv6", instanceCtrl.AttachIPv6)
 			instance.POST("/autoRescue", instanceCtrl.AutoRescue)
-			instance.POST("/enable500Mbps", instanceCtrl.Enable500Mbps)
-			instance.POST("/disable500Mbps", instanceCtrl.Disable500Mbps)
 		}
 
 		bootVolume := api.Group("/bootVolume")
@@ -180,8 +186,28 @@ func Setup(r *gin.Engine, cfg *config.Config) *Services {
 		}
 	}
 
-	// SPA fallback - 所有未匹配的路由都返回 index.html，让前端路由接管
-	r.NoRoute(serveIndex)
+	// 兜底路由：分两类处理，避免把 index.html 当成接口响应返回。
+	//
+	// 此前对所有未匹配路径都返回 SPA 的 index.html（200 + text/html），
+	// 导致 /api 下的路径写错、或接口已被删除时，前端 axios 拿到的是 HTML，
+	// 解析失败报出一堆莫名其妙的错误，排查成本极高（状态码还是 200，看着像"通了"）。
+	//
+	// - /api/** ：返回标准 JSON 404，前端能看到明确的"接口不存在"；
+	// - 其余路径：照旧返回 index.html，交给前端路由接管。
+	r.NoRoute(func(c *gin.Context) {
+		path := c.Request.URL.Path
+		if path == "/api" || strings.HasPrefix(path, "/api/") {
+			c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
+			c.Header("Pragma", "no-cache")
+			c.Header("Expires", "0")
+			c.JSON(
+				http.StatusNotFound,
+				models.ErrorResponse(http.StatusNotFound, fmt.Sprintf("接口不存在: %s %s", c.Request.Method, path)),
+			)
+			return
+		}
+		serveIndex(c)
+	})
 
 	return &Services{
 		Scheduler: schedulerService,

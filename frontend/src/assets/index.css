@@ -5,7 +5,56 @@
 @tailwind utilities;
 
 @layer base {
+  /*
+   * 主题调色板
+   * ---------------------------------------------------------------
+   * :root   = 浅色（默认）
+   * .dark   = 深色，class 打在 <html> 上
+   * 两套使用完全相同的变量名，tailwind.config.js 里统一映射为 hsl(var(--x))，
+   * 所以换肤只需要切换根节点上的 dark 类，组件代码无需改动。
+   * 变量值格式为 "H S% L%"（不含 hsl()），方便 tailwind 里加透明度后缀。
+   */
   :root {
+    --background: 210 40% 98%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 189 94% 32%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 214 32% 91%;
+    --secondary-foreground: 222 47% 20%;
+    --muted: 214 32% 91%;
+    --muted-foreground: 215 19% 40%;
+    --accent: 214 32% 91%;
+    --accent-foreground: 222 47% 20%;
+    --destructive: 355 75% 48%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 160 74% 32%;
+    --success-foreground: 0 0% 100%;
+    --warning: 32 95% 44%;
+    --warning-foreground: 0 0% 100%;
+    --border: 214 25% 86%;
+    --input: 214 25% 86%;
+    --ring: 189 94% 32%;
+    --radius: 0.625rem;
+    --chart-1: 189 94% 32%;
+    --chart-2: 160 74% 32%;
+    --chart-3: 32 95% 44%;
+    --chart-4: 355 75% 48%;
+    --chart-5: 280 55% 50%;
+    --sidebar-background: 214 32% 96%;
+    --sidebar-foreground: 222 47% 11%;
+    --sidebar-primary: 189 94% 32%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 214 32% 91%;
+    --sidebar-accent-foreground: 222 47% 20%;
+    --sidebar-border: 214 25% 86%;
+    --sidebar-ring: 189 94% 32%;
+  }
+
+  .dark {
     --background: 222 47% 5%;
     --foreground: 210 40% 98%;
     --card: 222 47% 8%;
@@ -77,6 +126,23 @@
 
   ::selection {
     @apply bg-primary/30 text-foreground;
+  }
+
+  /*
+   * 主题切换的平滑过渡。
+   * 只在切换的瞬间把这个类挂到 <html> 上，几毫秒后移除，
+   * 避免首屏渲染时所有元素一起做动画。
+   */
+  html.theme-transition,
+  html.theme-transition *,
+  html.theme-transition *::before,
+  html.theme-transition *::after {
+    transition:
+      background-color 0.2s ease,
+      border-color 0.2s ease,
+      color 0.2s ease,
+      fill 0.2s ease,
+      stroke 0.2s ease !important;
   }
 }
 

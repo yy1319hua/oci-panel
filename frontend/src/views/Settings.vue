@@ -39,13 +39,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
-import {
-  Dialog,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter
-} from '@/components/ui/dialog'
+import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 
 const loading = ref(false)
 const refreshing = ref(false)
@@ -153,8 +147,7 @@ const openCalls = async (t: ApiToken) => {
 }
 
 // 状态码着色：2xx 成功、4xx 警告、5xx 错误
-const statusClass = (code: number) =>
-  code >= 500 ? 'text-destructive' : code >= 400 ? 'text-warning' : 'text-success'
+const statusClass = (code: number) => (code >= 500 ? 'text-destructive' : code >= 400 ? 'text-warning' : 'text-success')
 
 // 调用记录拼成「一行一条」的纯文本行，风格与实时日志页保持一致：
 // 2026-09-15 03:58:28 [API] GET /api/configs/list → 200 ip=1.2.3.4
@@ -166,9 +159,7 @@ const callHead = (c: TokenCallLog) => `${formatTime(c.createdAt)} [API] ${c.meth
 const callTail = (c: TokenCallLog) => ` ip=${c.ip || '—'}`
 
 // 按调用次数排序展示（调用多的令牌排前面更直观）
-const sortedTokens = computed(() =>
-  [...tokens.value].sort((a, b) => (b.callCount || 0) - (a.callCount || 0))
-)
+const sortedTokens = computed(() => [...tokens.value].sort((a, b) => (b.callCount || 0) - (a.callCount || 0)))
 
 const loadTokens = async () => {
   tokensLoading.value = true
@@ -541,7 +532,12 @@ onMounted(() => {
   loadAuthStatus()
   loadProfile()
   loadTokens()
-  sysApi.getVersion().then(r => { if (r.data?.version) version.value = r.data.version }).catch(() => {})
+  sysApi
+    .getVersion()
+    .then(r => {
+      if (r.data?.version) version.value = r.data.version
+    })
+    .catch(() => {})
 })
 
 const version = ref('')
@@ -818,6 +814,7 @@ const systemInfo = computed(() => [
                 <p class="text-sm text-muted-foreground mb-4">
                   请使用 Google Authenticator、Microsoft Authenticator 或其他 TOTP 应用扫描二维码
                 </p>
+                <!-- 二维码必须保持纯白底：它是深色编码的位图，任何底色/滤镜都会让扫码失败，所以这里刻意不跟主题走 -->
                 <img
                   v-if="mfaConfig.qrCode"
                   :src="mfaConfig.qrCode"
@@ -1019,10 +1016,7 @@ const systemInfo = computed(() => [
               <div class="min-w-0 flex-1 w-full sm:w-auto">
                 <div class="flex flex-wrap items-center gap-2">
                   <span class="font-medium break-words min-w-0 w-full sm:w-auto sm:flex-1">{{ t.name }}</span>
-                  <Badge
-                    :variant="t.scope === 'full' ? 'success' : 'secondary'"
-                    class="shrink-0 whitespace-nowrap"
-                  >
+                  <Badge :variant="t.scope === 'full' ? 'success' : 'secondary'" class="shrink-0 whitespace-nowrap">
                     {{ t.scope }}
                   </Badge>
                   <Badge variant="secondary" class="gap-1 shrink-0 whitespace-nowrap">
@@ -1053,12 +1047,7 @@ const systemInfo = computed(() => [
                   <Activity class="w-4 h-4" />
                   调用记录
                 </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  :disabled="revokingId === t.id"
-                  @click="revokeToken(t.id)"
-                >
+                <Button variant="outline" size="sm" :disabled="revokingId === t.id" @click="revokeToken(t.id)">
                   <Loader2 v-if="revokingId === t.id" class="w-4 h-4 animate-spin" />
                   <Trash2 v-else class="w-4 h-4" />
                   吊销
@@ -1157,19 +1146,13 @@ const systemInfo = computed(() => [
       <Dialog v-model:open="createOpen">
         <DialogHeader>
           <DialogTitle>创建 API 令牌</DialogTitle>
-          <DialogDescription>
-            令牌生成后明文仅显示一次，请立即复制保存。
-          </DialogDescription>
+          <DialogDescription>令牌生成后明文仅显示一次，请立即复制保存。</DialogDescription>
         </DialogHeader>
 
         <div v-if="!newToken" class="space-y-4">
           <div>
             <label class="text-sm font-medium mb-2 block">名称</label>
-            <Input
-              v-model="createForm.name"
-              placeholder="例如：我的机器人"
-              @keyup.enter="createToken"
-            />
+            <Input v-model="createForm.name" placeholder="例如：我的机器人" @keyup.enter="createToken" />
           </div>
           <div>
             <label class="text-sm font-medium mb-2 block">过期时间</label>
@@ -1188,7 +1171,9 @@ const systemInfo = computed(() => [
 
         <div v-else class="space-y-4">
           <p class="text-sm text-amber-600 dark:text-amber-400">
-            ⚠️ 以下为完整令牌，<b>仅显示这一次</b>，关闭后无法再次查看：
+            ⚠️ 以下为完整令牌，
+            <b>仅显示这一次</b>
+            ，关闭后无法再次查看：
           </p>
           <div class="flex items-center gap-2">
             <code class="flex-1 break-all rounded bg-secondary px-3 py-2 text-xs font-mono">{{ newToken.token }}</code>

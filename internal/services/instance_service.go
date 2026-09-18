@@ -179,35 +179,6 @@ func (s *InstanceService) UpdateBootVolumeById(userId string, bootVolumeId strin
 	return s.ociService.UpdateBootVolume(ctx, &user, bootVolumeId, sizeInGBs, vpusPerGB)
 }
 
-// CreateCloudShellConnection 创建Cloud Shell连接
-func (s *InstanceService) CreateCloudShellConnection(userId string, instanceId string, publicKey string) (map[string]string, error) {
-	var user models.OciUser
-	if err := database.GetDB().Where("id = ?", userId).First(&user).Error; err != nil {
-		return nil, fmt.Errorf("user not found: %w", err)
-	}
-
-	ctx := context.Background()
-
-	// 创建控制台连接
-	connectionId, err := s.ociService.CreateConsoleConnection(ctx, &user, instanceId, publicKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create console connection: %w", err)
-	}
-
-	// 获取连接字符串
-	connectionString, err := s.ociService.GetConsoleConnectionString(ctx, &user, connectionId)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get connection string: %w", err)
-	}
-
-	result := map[string]string{
-		"connectionId":     connectionId,
-		"connectionString": connectionString,
-	}
-
-	return result, nil
-}
-
 // AttachIPv6 为实例附加IPv6地址
 func (s *InstanceService) AttachIPv6(userId string, instanceId string) (string, error) {
 	var user models.OciUser
@@ -238,24 +209,4 @@ func (s *InstanceService) AutoRescue(userId string, instanceId string, instanceN
 	}
 
 	return s.ociService.AutoRescue(&user, params, progressChan)
-}
-
-// Enable500Mbps 一键开启下行500Mbps
-func (s *InstanceService) Enable500Mbps(userId string, instanceId string, sshPort int) (string, error) {
-	var user models.OciUser
-	if err := database.GetDB().Where("id = ?", userId).First(&user).Error; err != nil {
-		return "", fmt.Errorf("user not found: %w", err)
-	}
-
-	return s.ociService.Enable500Mbps(&user, instanceId, sshPort)
-}
-
-// Disable500Mbps 关闭下行500Mbps
-func (s *InstanceService) Disable500Mbps(userId string, instanceId string, retainNatGw, retainNlb bool) error {
-	var user models.OciUser
-	if err := database.GetDB().Where("id = ?", userId).First(&user).Error; err != nil {
-		return fmt.Errorf("user not found: %w", err)
-	}
-
-	return s.ociService.Disable500Mbps(&user, instanceId, retainNatGw, retainNlb)
 }

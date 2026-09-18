@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useMotion } from '@vueuse/motion'
 import {
@@ -13,10 +13,14 @@ import {
   X,
   User,
   Clock,
-  BookOpen
+  BookOpen,
+  Monitor,
+  Sun,
+  Moon
 } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 import { toast } from '@/composables/useToast'
+import { theme } from '@/composables/useTheme'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -26,6 +30,15 @@ const authStore = useAuthStore()
 
 const sidebarOpen = ref(false)
 const currentTime = ref('')
+
+// 主题三态：system → light → dark，按钮图标即当前状态
+const THEME_META = {
+  system: { icon: Monitor, label: '跟随系统', next: '切换为浅色模式' },
+  light: { icon: Sun, label: '浅色模式', next: '切换为深色模式' },
+  dark: { icon: Moon, label: '深色模式', next: '切换为跟随系统' }
+} as const
+
+const themeMeta = computed(() => THEME_META[theme.mode.value])
 
 const navItems = [
   { path: '/', label: '概览', icon: LayoutDashboard },
@@ -198,7 +211,9 @@ const isActivePath = (path: string) => {
     <!-- Main Content -->
     <div ref="mainRef" class="flex-1 flex flex-col overflow-hidden">
       <!-- Topbar -->
-      <header class="h-16 border-b border-border/50 flex items-center justify-between px-4 sm:px-6 bg-background flex-shrink-0">
+      <header
+        class="h-16 border-b border-border/50 flex items-center justify-between px-4 sm:px-6 bg-background flex-shrink-0"
+      >
         <div class="flex items-center gap-4">
           <Button variant="ghost" size="icon" class="lg:hidden" @click="sidebarOpen = !sidebarOpen">
             <Menu v-if="!sidebarOpen" class="w-5 h-5" />
@@ -210,6 +225,16 @@ const isActivePath = (path: string) => {
         </div>
 
         <div class="flex items-center gap-4">
+          <Button
+            variant="ghost"
+            size="icon"
+            class="text-muted-foreground hover:text-foreground"
+            :title="`${themeMeta.label} · ${themeMeta.next}`"
+            :aria-label="themeMeta.label"
+            @click="theme.toggle()"
+          >
+            <component :is="themeMeta.icon" class="w-5 h-5" />
+          </Button>
           <div class="flex items-center gap-2 text-sm text-muted-foreground">
             <Clock class="w-4 h-4" />
             <span class="font-mono whitespace-nowrap">{{ currentTime }}</span>

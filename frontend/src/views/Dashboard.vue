@@ -18,6 +18,7 @@ import {
 } from 'lucide-vue-next'
 import { sysApi, ociApi, type InstanceInfo } from '@/api'
 import { toast } from '@/composables/useToast'
+import { theme } from '@/composables/useTheme'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 const router = useRouter()
@@ -35,7 +36,13 @@ const trafficLoading = ref(false)
 
 const instances = ref<InstanceInfo[]>([])
 
-const INSTANCE_COLORS = ['#22d3ee', '#34d399', '#fbbf24', '#a78bfa', '#f472b6']
+// 实例分布图的配色。深色各系列取 400 级（深底上更透亮），浅色取 600 级
+// （浅底上 400 级会糊），随主题切换。
+const INSTANCE_COLORS = {
+  dark: ['#22d3ee', '#34d399', '#fbbf24', '#a78bfa', '#f472b6'],
+  light: ['#0891b2', '#059669', '#d97706', '#7c3aed', '#db2777']
+}
+const instanceColors = computed(() => (theme.isDark.value ? INSTANCE_COLORS.dark : INSTANCE_COLORS.light))
 
 interface TrafficInstance {
   id: string
@@ -122,10 +129,28 @@ const formatBytes = (bytes: number) => {
 }
 
 const quickActions = [
-  { title: '流量查询', description: '查看实例入站/出站流量', icon: BarChart3, path: '/configs', variant: 'outline' as const },
-  { title: '实例详情', description: '实例规格 / IP / 引导卷', icon: Eye, path: '/configs', variant: 'outline' as const },
+  {
+    title: '流量查询',
+    description: '查看实例入站/出站流量',
+    icon: BarChart3,
+    path: '/configs',
+    variant: 'outline' as const
+  },
+  {
+    title: '实例详情',
+    description: '实例规格 / IP / 引导卷',
+    icon: Eye,
+    path: '/configs',
+    variant: 'outline' as const
+  },
   { title: '实时日志', description: '后端与 API 调用日志', icon: FileText, path: '/logs', variant: 'outline' as const },
-  { title: '系统设置', description: '账号 / 日志 / Telegram', icon: Settings, path: '/settings', variant: 'outline' as const }
+  {
+    title: '系统设置',
+    description: '账号 / 日志 / Telegram',
+    icon: Settings,
+    path: '/settings',
+    variant: 'outline' as const
+  }
 ]
 
 const loadVersion = async () => {
@@ -198,7 +223,7 @@ const loadOverview = async () => {
             inbound: it.inbound || 0,
             outbound: it.outbound || 0,
             pct: total > 0 ? Math.round((t / total) * 100) : 0,
-            color: INSTANCE_COLORS[i % INSTANCE_COLORS.length]
+            color: instanceColors.value[i % instanceColors.value.length]
           }
         })
         const daily = (m.dailyLabels || []).map((_, i) => (m.dailyInbound[i] || 0) + (m.dailyOutbound[i] || 0))
@@ -264,7 +289,10 @@ onMounted(() => {
       >
         实例列表加载失败，请稍后重试（不是配置丢失）
       </div>
-      <div v-else-if="!hasInstance" class="text-muted-foreground text-sm py-8 text-center border border-dashed rounded-lg">
+      <div
+        v-else-if="!hasInstance"
+        class="text-muted-foreground text-sm py-8 text-center border border-dashed rounded-lg"
+      >
         暂无实例，请在「配置管理」中添加配置并查看详情
       </div>
       <div v-else class="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -339,73 +367,97 @@ onMounted(() => {
           <ArrowRight class="w-4 h-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div v-if="trafficLoading && traffic.totalBytes === 0" class="h-16 flex items-center gap-2 text-sm text-muted-foreground">
+          <div
+            v-if="trafficLoading && traffic.totalBytes === 0"
+            class="h-16 flex items-center gap-2 text-sm text-muted-foreground"
+          >
             <Activity class="w-4 h-4 animate-spin text-primary" />
             正在加载流量数据...
           </div>
           <template v-else>
-          <div class="flex flex-wrap items-end gap-8">
-            <div>
-              <p class="text-sm text-muted-foreground">总流量（本月实际）</p>
-              <p class="text-2xl font-bold font-display">
-                {{ formatBytes(traffic.totalBytes).value }}<span class="text-base ml-1 text-muted-foreground">{{ formatBytes(traffic.totalBytes).unit }}</span>
-              </p>
+            <div class="flex flex-wrap items-end gap-8">
+              <div>
+                <p class="text-sm text-muted-foreground">总流量（本月实际）</p>
+                <p class="text-2xl font-bold font-display">
+                  {{ formatBytes(traffic.totalBytes).value }}
+                  <span class="text-base ml-1 text-muted-foreground">{{ formatBytes(traffic.totalBytes).unit }}</span>
+                </p>
+              </div>
+              <div>
+                <p class="text-sm text-muted-foreground">计费出站（超 10TB 部分）</p>
+                <p class="text-2xl font-bold font-display" :class="traffic.billableBytes > 0 ? 'text-destructive' : ''">
+                  {{ formatBytes(traffic.billableBytes).value }}
+                  <span class="text-base ml-1 text-muted-foreground">
+                    {{ formatBytes(traffic.billableBytes).unit }}
+                  </span>
+                </p>
+              </div>
             </div>
-            <div>
-              <p class="text-sm text-muted-foreground">计费出站（超 10TB 部分）</p>
-              <p class="text-2xl font-bold font-display" :class="traffic.billableBytes > 0 ? 'text-destructive' : ''">
-                {{ formatBytes(traffic.billableBytes).value }}<span class="text-base ml-1 text-muted-foreground">{{ formatBytes(traffic.billableBytes).unit }}</span>
-              </p>
+
+            <p class="mt-3 text-xs text-muted-foreground">
+              甲骨文按账号计流量：
+              <span class="text-foreground/80">入站免费</span>
+              ， 仅
+              <span class="text-foreground/80">出站</span>
+              超出免费额度才计费。
+            </p>
+
+            <div class="mt-3 space-y-1 text-xs text-muted-foreground">
+              <div>
+                免费额度 {{ formatBytes(traffic.freeAllowance).value }} {{ formatBytes(traffic.freeAllowance).unit }} ·
+                出站已用 {{ traffic.allowancePct.toFixed(1) }}%
+              </div>
+              <div>
+                <span class="text-success">
+                  入 {{ formatBytes(traffic.inboundBytes).value }}{{ formatBytes(traffic.inboundBytes).unit }}
+                </span>
+                /
+                <span class="text-warning">
+                  出 {{ formatBytes(traffic.outboundBytes).value }}{{ formatBytes(traffic.outboundBytes).unit }}
+                </span>
+              </div>
             </div>
-          </div>
+            <div class="mt-1 h-2 rounded-full bg-secondary overflow-hidden">
+              <div
+                class="h-full rounded-full"
+                :style="{ width: traffic.allowancePct + '%', background: 'linear-gradient(90deg,#22d3ee,#34d399)' }"
+              ></div>
+            </div>
 
-          <p class="mt-3 text-xs text-muted-foreground">
-            甲骨文按账号计流量：<span class="text-foreground/80">入站免费</span>，
-            仅<span class="text-foreground/80">出站</span>超出免费额度才计费。
-          </p>
-
-          <div class="mt-3 space-y-1 text-xs text-muted-foreground">
-            <div>免费额度 {{ formatBytes(traffic.freeAllowance).value }} {{ formatBytes(traffic.freeAllowance).unit }} · 出站已用 {{ traffic.allowancePct.toFixed(1) }}%</div>
-            <div><span class="text-emerald-400">入 {{ formatBytes(traffic.inboundBytes).value }}{{ formatBytes(traffic.inboundBytes).unit }}</span> / <span class="text-amber-400">出 {{ formatBytes(traffic.outboundBytes).value }}{{ formatBytes(traffic.outboundBytes).unit }}</span></div>
-          </div>
-          <div class="mt-1 h-2 rounded-full bg-slate-800 overflow-hidden">
-            <div class="h-full rounded-full" :style="{ width: traffic.allowancePct + '%', background: 'linear-gradient(90deg,#22d3ee,#34d399)' }"></div>
-          </div>
-
-          <!-- 每实例占比 -->
-          <div v-if="traffic.instances.length" class="mt-4 space-y-3">
-            <div v-for="inst in traffic.instances" :key="inst.id" class="text-sm">
-              <!-- 手机端：名称+数值一行，进度条整行铺满 -->
-              <div class="lg:hidden">
-                <div class="flex items-center justify-between gap-3">
+            <!-- 每实例占比 -->
+            <div v-if="traffic.instances.length" class="mt-4 space-y-3">
+              <div v-for="inst in traffic.instances" :key="inst.id" class="text-sm">
+                <!-- 手机端：名称+数值一行，进度条整行铺满 -->
+                <div class="lg:hidden">
+                  <div class="flex items-center justify-between gap-3">
+                    <div class="flex items-center gap-2 min-w-0">
+                      <span class="w-2.5 h-2.5 rounded-full shrink-0" :style="{ background: inst.color }"></span>
+                      <span class="truncate text-foreground/90">{{ inst.name }}</span>
+                    </div>
+                    <span class="shrink-0 text-muted-foreground tabular-nums">
+                      {{ formatBytes(inst.total).value }} {{ formatBytes(inst.total).unit }} · {{ inst.pct }}%
+                    </span>
+                  </div>
+                  <div class="h-2 rounded-full bg-secondary overflow-hidden mt-1.5">
+                    <div class="h-full rounded-full" :style="{ width: inst.pct + '%', background: inst.color }"></div>
+                  </div>
+                </div>
+                <!-- 桌面端：保留原三列对齐 -->
+                <div class="hidden lg:grid lg:grid-cols-[160px_1fr_auto] lg:items-center lg:gap-3">
                   <div class="flex items-center gap-2 min-w-0">
                     <span class="w-2.5 h-2.5 rounded-full shrink-0" :style="{ background: inst.color }"></span>
                     <span class="truncate text-foreground/90">{{ inst.name }}</span>
                   </div>
-                  <span class="shrink-0 text-muted-foreground tabular-nums">
+                  <div class="h-2 rounded-full bg-secondary overflow-hidden">
+                    <div class="h-full rounded-full" :style="{ width: inst.pct + '%', background: inst.color }"></div>
+                  </div>
+                  <div class="text-right text-muted-foreground tabular-nums">
                     {{ formatBytes(inst.total).value }} {{ formatBytes(inst.total).unit }} · {{ inst.pct }}%
-                  </span>
-                </div>
-                <div class="h-2 rounded-full bg-slate-800 overflow-hidden mt-1.5">
-                  <div class="h-full rounded-full" :style="{ width: inst.pct + '%', background: inst.color }"></div>
-                </div>
-              </div>
-              <!-- 桌面端：保留原三列对齐 -->
-              <div class="hidden lg:grid lg:grid-cols-[160px_1fr_auto] lg:items-center lg:gap-3">
-                <div class="flex items-center gap-2 min-w-0">
-                  <span class="w-2.5 h-2.5 rounded-full shrink-0" :style="{ background: inst.color }"></span>
-                  <span class="truncate text-foreground/90">{{ inst.name }}</span>
-                </div>
-                <div class="h-2 rounded-full bg-slate-800 overflow-hidden">
-                  <div class="h-full rounded-full" :style="{ width: inst.pct + '%', background: inst.color }"></div>
-                </div>
-                <div class="text-right text-muted-foreground tabular-nums">
-                  {{ formatBytes(inst.total).value }} {{ formatBytes(inst.total).unit }} · {{ inst.pct }}%
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-          <div v-else class="mt-4 text-xs text-muted-foreground">暂无实例流量明细</div>
+            <div v-else class="mt-4 text-xs text-muted-foreground">暂无实例流量明细</div>
           </template>
         </CardContent>
       </Card>
@@ -433,14 +485,21 @@ onMounted(() => {
             class="h-auto py-3 px-4 w-full rounded-lg border border-border/50 bg-card/50 hover:bg-secondary/50 hover:border-primary/30 transition-all duration-300 group text-left flex items-center gap-3"
             @click="router.push(action.path)"
           >
-            <div class="w-9 h-9 rounded-lg bg-secondary/80 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
-              <component :is="action.icon" class="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
+            <div
+              class="w-9 h-9 rounded-lg bg-secondary/80 flex items-center justify-center group-hover:bg-primary/20 transition-colors"
+            >
+              <component
+                :is="action.icon"
+                class="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors"
+              />
             </div>
             <div class="flex-1">
               <p class="font-semibold text-foreground text-sm">{{ action.title }}</p>
               <p class="text-xs text-muted-foreground">{{ action.description }}</p>
             </div>
-            <ArrowRight class="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 group-hover:translate-x-1 group-hover:text-primary transition-all" />
+            <ArrowRight
+              class="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 group-hover:translate-x-1 group-hover:text-primary transition-all"
+            />
           </button>
         </CardContent>
       </Card>

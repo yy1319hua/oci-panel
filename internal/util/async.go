@@ -7,7 +7,7 @@ import (
 
 // Go 启动一个带 panic 恢复的后台 goroutine。
 //
-// 项目中存在大量 fire-and-forget 的后台任务（缓存刷新、500Mbps 开关、自动救援等）。
+// 项目中存在大量 fire-and-forget 的后台任务（缓存刷新、自动救援等）。
 // 此前这些 goroutine 一旦 panic 会直接导致整个进程崩溃。Go 用 recover 兜底，
 // 把 panic 转成日志（含堆栈），保证单个后台任务出错不影响主服务。
 //

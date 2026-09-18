@@ -186,7 +186,7 @@ const sendReset = async () => {
 
     <!-- Floating Elements -->
     <div class="absolute top-1/4 left-1/4 w-64 h-64 bg-primary/10 rounded-full blur-3xl animate-pulse" />
-    <div class="absolute bottom-1/4 right-1/4 w-96 h-96 bg-cyan-500/5 rounded-full blur-3xl animate-pulse delay-1000" />
+    <div class="absolute bottom-1/4 right-1/4 w-96 h-96 bg-primary/5 rounded-full blur-3xl animate-pulse delay-1000" />
 
     <!-- Login Card -->
     <Card ref="cardRef" class="relative z-10 w-full max-w-md glass border-border/50">
