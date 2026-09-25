@@ -79,12 +79,12 @@ export const automationApi = {
   deleteBackup: (id: number) => post('/automation/backup/delete', { id }),
   runBackup: (id: number) => post('/automation/backup/run', { id }),
   listVolumes: (configId: string) => get<Array<{ id: string; name: string; type: string; sizeGB: number }>>(
-    `/api/automation/backup/volumes?configId=${encodeURIComponent(configId)}`
+    `/automation/backup/volumes?configId=${encodeURIComponent(configId)}`
   ),
   // 告警 / 配额 / 推送设置
   getQuota: () => get<QuotaOverview[]>('/automation/quota'),
   saveSettings: (data: { trafficAlertThreshold: number }) => post('/automation/settings', data),
-  clearAlert: (configId = '') => post(`/api/automation/alert/clear?configId=${encodeURIComponent(configId)}`, {}),
+  clearAlert: (configId = '') => post(`/automation/alert/clear?configId=${encodeURIComponent(configId)}`, {}),
   getCpuMemory: (data: { configId: string; instanceId: string; hours: number }) =>
     post<{ time: string[]; cpu: number[]; memory: number[]; hasMemory: boolean }>(
       '/automation/metrics/cpu-memory', data
@@ -98,13 +98,13 @@ export const automationApi = {
 /** 抢机表单下拉数据（AD / 镜像 / 子网）。 */
 export const lookupApi = {
   ads: (configId: string) =>
-    get<Array<{ value: string; label: string }>>(`/api/automation/lookup/ads?configId=${encodeURIComponent(configId)}`),
+    get<Array<{ value: string; label: string }>>(`/automation/lookup/ads?configId=${encodeURIComponent(configId)}`),
   images: (configId: string, shape: string) =>
     get<Array<{ value: string; label: string }>>(
-      `/api/automation/lookup/images?configId=${encodeURIComponent(configId)}&shape=${encodeURIComponent(shape)}`
+      `/automation/lookup/images?configId=${encodeURIComponent(configId)}&shape=${encodeURIComponent(shape)}`
     ),
   subnets: (configId: string) =>
     get<Array<{ value: string; label: string }>>(
-      `/api/automation/lookup/subnets?configId=${encodeURIComponent(configId)}`
+      `/automation/lookup/subnets?configId=${encodeURIComponent(configId)}`
     )
 }

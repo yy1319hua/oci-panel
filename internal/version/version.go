@@ -16,4 +16,4 @@ package version
 // 前端展示时自己拼 v（`OCI Panel · v{{ version }}`）。
 //
 // 此处的字面量是「未注入时的兜底值」，请与最新 tag 保持一致。
-var AppVersion = "1.0.32"
+var AppVersion = "1.0.33"
