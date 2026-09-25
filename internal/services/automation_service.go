@@ -11,6 +11,7 @@ import (
 
         "github.com/adiecho/oci-panel/internal/database"
         "github.com/adiecho/oci-panel/internal/models"
+        "github.com/google/uuid"
         "github.com/oracle/oci-go-sdk/v65/common"
         "github.com/oracle/oci-go-sdk/v65/computeinstanceagent"
         "github.com/oracle/oci-go-sdk/v65/core"
@@ -466,10 +467,12 @@ func (s *AutomationService) alertAlreadySent(configID string) bool {
 func (s *AutomationService) markAlertSent(configID string) {
         db := database.GetDB()
         val := s.alertKeyMonth()
-        setting := models.SysSetting{Key: s.alertStateKey(configID), Value: val}
-        db.Where("`key` = ?", s.alertStateKey(configID)).
-                Assign(models.SysSetting{Value: val}).
-                FirstOrCreate(&setting)
+        var setting models.SysSetting
+        if err := db.Where("`key` = ?", s.alertStateKey(configID)).First(&setting).Error; err != nil {
+                setting = models.SysSetting{ID: uuid.New().String(), Key: s.alertStateKey(configID)}
+        }
+        setting.Value = val
+        db.Save(&setting)
 }
 
 func (s *AutomationService) clearAlertState(configID string) {

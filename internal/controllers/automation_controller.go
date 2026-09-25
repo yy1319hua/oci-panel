@@ -6,6 +6,7 @@ import (
         "github.com/adiecho/oci-panel/internal/models"
         "github.com/adiecho/oci-panel/internal/services"
         "github.com/gin-gonic/gin"
+        "github.com/google/uuid"
 )
 
 // AutomationController 自动化任务（保活/抢机/备份/告警/配额）HTTP 接口。
@@ -283,11 +284,14 @@ func (ctl *AutomationController) SaveSettings(c *gin.Context) {
                 resp(c, nil, errInvalidThreshold())
                 return
         }
-        setting := models.SysSetting{Key: "traffic_alert_threshold", Value: strconv.FormatFloat(in.TrafficAlertThreshold, 'f', -1, 64)}
+        val := strconv.FormatFloat(in.TrafficAlertThreshold, 'f', -1, 64)
         db := db()
-        db.Where("`key` = ?", "traffic_alert_threshold").
-                Assign(models.SysSetting{Value: setting.Value}).
-                FirstOrCreate(&setting)
+        var setting models.SysSetting
+        if err := db.Where("`key` = ?", "traffic_alert_threshold").First(&setting).Error; err != nil {
+                setting = models.SysSetting{ID: uuid.New().String(), Key: "traffic_alert_threshold"}
+        }
+        setting.Value = val
+        db.Save(&setting)
         resp(c, nil, nil)
 }
 
@@ -355,7 +359,7 @@ func (ctl *AutomationController) SavePushplus(c *gin.Context) {
 func (ctl *AutomationController) TestPushplus(c *gin.Context) {
         token := services.GetPushplusToken()
         if token == "" {
-                resp(c, nil, errInvalidThreshold())
+                resp(c, nil, errPushplusNotConfigured())
                 return
         }
         resp(c, nil, services.SendPushplus(token, "OCI Panel 测试推送", "这是一条测试消息，收到即表示 PushPlus 通道配置成功 ✅"))
