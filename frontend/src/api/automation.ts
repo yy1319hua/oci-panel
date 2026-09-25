@@ -83,7 +83,8 @@ export const automationApi = {
   ),
   // 告警 / 配额 / 推送设置
   getQuota: () => get<QuotaOverview[]>('/automation/quota'),
-  saveSettings: (data: { trafficAlertThreshold: number }) => post('/automation/settings', data),
+  saveSettings: (data: { trafficAlertThreshold: number; cpuAlertThreshold?: number }) => post('/automation/settings', data),
+  getSettings: () => get<{ trafficAlertThreshold: number; cpuAlertThreshold: number }>('/automation/settings'),
   clearAlert: (configId = '') => post(`/automation/alert/clear?configId=${encodeURIComponent(configId)}`, {}),
   getCpuMemory: (data: { configId: string; instanceId: string; hours: number }) =>
     post<{ time: string[]; cpu: number[]; memory: number[]; hasMemory: boolean }>(

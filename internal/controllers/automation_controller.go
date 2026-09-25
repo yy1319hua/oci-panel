@@ -69,6 +69,8 @@ func (ctl *AutomationController) SaveKeepalive(c *gin.Context) {
         } else {
                 t = models.KeepaliveTask{ConfigID: in.ConfigID, InstanceID: in.InstanceID}
         }
+        t.ConfigID = in.ConfigID
+        t.InstanceID = in.InstanceID
         t.InstanceName = in.InstanceName
         t.Enabled = in.Enabled
         t.IntervalMin = in.IntervalMin
@@ -79,15 +81,27 @@ func (ctl *AutomationController) SaveKeepalive(c *gin.Context) {
 
 // POST /api/automation/keepalive/delete
 func (ctl *AutomationController) DeleteKeepalive(c *gin.Context) {
-        id, _ := strconv.Atoi(c.Query("id"))
-        resp(c, nil, db().Delete(&models.KeepaliveTask{}, id).Error)
+        var in struct {
+                ID uint `json:"id"`
+        }
+        if err := c.ShouldBindJSON(&in); err != nil || in.ID == 0 {
+                resp(c, nil, errIDRequired())
+                return
+        }
+        resp(c, nil, db().Delete(&models.KeepaliveTask{}, in.ID).Error)
 }
 
 // POST /api/automation/keepalive/run
 func (ctl *AutomationController) RunKeepalive(c *gin.Context) {
-        id, _ := strconv.Atoi(c.PostForm("id"))
+        var in struct {
+                ID uint `json:"id"`
+        }
+        if err := c.ShouldBindJSON(&in); err != nil || in.ID == 0 {
+                resp(c, nil, errIDRequired())
+                return
+        }
         var t models.KeepaliveTask
-        if err := db().First(&t, id).Error; err != nil {
+        if err := db().First(&t, in.ID).Error; err != nil {
                 resp(c, nil, err)
                 return
         }
@@ -165,6 +179,7 @@ func (ctl *AutomationController) SaveGrab(c *gin.Context) {
         } else {
                 t = models.GrabTask{ConfigID: in.ConfigID, Name: in.Name}
         }
+        t.ConfigID = in.ConfigID
         t.Ad, t.Shape, t.Ocpus, t.MemoryGB, t.BootVolumeGB = in.Ad, in.Shape, in.Ocpus, in.MemoryGB, in.BootVolumeGB
         t.ImageID, t.SubnetID, t.InstanceName, t.IntervalMin, t.Enabled = in.ImageID, in.SubnetID, in.InstanceName, in.IntervalMin, in.Enabled
         if in.SSHKeyContent != "" {
@@ -176,15 +191,27 @@ func (ctl *AutomationController) SaveGrab(c *gin.Context) {
 
 // POST /api/automation/grab/delete
 func (ctl *AutomationController) DeleteGrab(c *gin.Context) {
-        id, _ := strconv.Atoi(c.Query("id"))
-        resp(c, nil, db().Delete(&models.GrabTask{}, id).Error)
+        var in struct {
+                ID uint `json:"id"`
+        }
+        if err := c.ShouldBindJSON(&in); err != nil || in.ID == 0 {
+                resp(c, nil, errIDRequired())
+                return
+        }
+        resp(c, nil, db().Delete(&models.GrabTask{}, in.ID).Error)
 }
 
 // POST /api/automation/grab/run
 func (ctl *AutomationController) RunGrab(c *gin.Context) {
-        id, _ := strconv.Atoi(c.PostForm("id"))
+        var in struct {
+                ID uint `json:"id"`
+        }
+        if err := c.ShouldBindJSON(&in); err != nil || in.ID == 0 {
+                resp(c, nil, errIDRequired())
+                return
+        }
         var t models.GrabTask
-        if err := db().First(&t, id).Error; err != nil {
+        if err := db().First(&t, in.ID).Error; err != nil {
                 resp(c, nil, err)
                 return
         }
@@ -237,6 +264,8 @@ func (ctl *AutomationController) SaveBackup(c *gin.Context) {
         } else {
                 t = models.BackupTask{ConfigID: in.ConfigID, VolumeID: in.VolumeID}
         }
+        t.ConfigID = in.ConfigID
+        t.VolumeID = in.VolumeID
         t.VolumeName, t.Retention, t.IntervalHour, t.Enabled = in.VolumeName, in.Retention, in.IntervalHour, in.Enabled
         err := db.Save(&t).Error
         resp(c, t, err)
@@ -244,15 +273,27 @@ func (ctl *AutomationController) SaveBackup(c *gin.Context) {
 
 // POST /api/automation/backup/delete
 func (ctl *AutomationController) DeleteBackup(c *gin.Context) {
-        id, _ := strconv.Atoi(c.Query("id"))
-        resp(c, nil, db().Delete(&models.BackupTask{}, id).Error)
+        var in struct {
+                ID uint `json:"id"`
+        }
+        if err := c.ShouldBindJSON(&in); err != nil || in.ID == 0 {
+                resp(c, nil, errIDRequired())
+                return
+        }
+        resp(c, nil, db().Delete(&models.BackupTask{}, in.ID).Error)
 }
 
 // POST /api/automation/backup/run
 func (ctl *AutomationController) RunBackup(c *gin.Context) {
-        id, _ := strconv.Atoi(c.PostForm("id"))
+        var in struct {
+                ID uint `json:"id"`
+        }
+        if err := c.ShouldBindJSON(&in); err != nil || in.ID == 0 {
+                resp(c, nil, errIDRequired())
+                return
+        }
         var t models.BackupTask
-        if err := db().First(&t, id).Error; err != nil {
+        if err := db().First(&t, in.ID).Error; err != nil {
                 resp(c, nil, err)
                 return
         }
@@ -264,12 +305,18 @@ func (ctl *AutomationController) RunBackup(c *gin.Context) {
 
 // GET /api/automation/settings
 func (ctl *AutomationController) GetSettings(c *gin.Context) {
-        out := map[string]interface{}{"trafficAlertThreshold": 80}
+        out := map[string]interface{}{"trafficAlertThreshold": 80, "cpuAlertThreshold": 0}
         var setting models.SysSetting
         if err := db().Where("`key` = ?", "traffic_alert_threshold").First(&setting).Error; err == nil {
                 var v float64
                 if jsonUnmarshal(setting.Value, &v) == nil && v > 0 && v <= 100 {
                         out["trafficAlertThreshold"] = v
+                }
+        }
+        if err := db().Where("`key` = ?", "cpu_alert_threshold").First(&setting).Error; err == nil {
+                var v float64
+                if jsonUnmarshal(setting.Value, &v) == nil && v >= 0 && v <= 100 {
+                        out["cpuAlertThreshold"] = v
                 }
         }
         resp(c, out, nil)
@@ -279,19 +326,25 @@ func (ctl *AutomationController) GetSettings(c *gin.Context) {
 func (ctl *AutomationController) SaveSettings(c *gin.Context) {
         var in struct {
                 TrafficAlertThreshold float64 `json:"trafficAlertThreshold"`
+                CpuAlertThreshold     *float64 `json:"cpuAlertThreshold"`
         }
         if err := c.ShouldBindJSON(&in); err != nil || in.TrafficAlertThreshold <= 0 || in.TrafficAlertThreshold > 100 {
                 resp(c, nil, errInvalidThreshold())
                 return
         }
-        val := strconv.FormatFloat(in.TrafficAlertThreshold, 'f', -1, 64)
         db := db()
-        var setting models.SysSetting
-        if err := db.Where("`key` = ?", "traffic_alert_threshold").First(&setting).Error; err != nil {
-                setting = models.SysSetting{ID: uuid.New().String(), Key: "traffic_alert_threshold"}
+        saveSetting := func(key string, val float64) {
+                var setting models.SysSetting
+                if err := db.Where("`key` = ?", key).First(&setting).Error; err != nil {
+                        setting = models.SysSetting{ID: uuid.New().String(), Key: key}
+                }
+                setting.Value = strconv.FormatFloat(val, 'f', -1, 64)
+                db.Save(&setting)
         }
-        setting.Value = val
-        db.Save(&setting)
+        saveSetting("traffic_alert_threshold", in.TrafficAlertThreshold)
+        if in.CpuAlertThreshold != nil && *in.CpuAlertThreshold >= 0 && *in.CpuAlertThreshold <= 100 {
+                saveSetting("cpu_alert_threshold", *in.CpuAlertThreshold)
+        }
         resp(c, nil, nil)
 }
 
@@ -322,7 +375,7 @@ func (ctl *AutomationController) GetCpuMemory(c *gin.Context) {
                 Hours      int    `json:"hours"`
         }
         if err := c.ShouldBindJSON(&in); err != nil || in.InstanceID == "" || in.ConfigID == "" {
-                resp(c, nil, errInvalidThreshold())
+                resp(c, nil, errIDRequired())
                 return
         }
         m, err := ctl.auto.GetCpuMemoryMetrics(in.ConfigID, in.InstanceID, in.Hours)

@@ -29,3 +29,7 @@ func errInvalidThreshold() error {
 func errPushplusNotConfigured() error {
         return errors.New("PushPlus token 未配置，请先保存 token 再测试")
 }
+
+func errIDRequired() error {
+        return errors.New("缺少有效的任务 id")
+}

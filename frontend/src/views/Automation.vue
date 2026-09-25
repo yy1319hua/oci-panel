@@ -5,7 +5,7 @@
  */
 import { ref, onMounted, computed } from 'vue'
 import {
-  HeartPulse, Target, DatabaseBackup, BellRing, Plus, Trash2, Play,
+  HeartPulse, Target, DatabaseBackup, BellRing, Plus, Trash2, Play, Activity,
   Loader2, X, RefreshCw, Smartphone, ChevronRight
 } from 'lucide-vue-next'
 import { automationApi, lookupApi, ociApi } from '@/api'
@@ -19,7 +19,7 @@ import { Switch } from '@/components/ui/switch'
 import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 
 // ---------- 基础状态 ----------
-const activeTab = ref<'keepalive' | 'grab' | 'backup' | 'alert'>('keepalive')
+const activeTab = ref<'keepalive' | 'grab' | 'backup' | 'alert' | 'metrics'>('keepalive')
 const loading = ref(false)
 const configs = ref<ConfigItem[]>([])
 
@@ -27,7 +27,8 @@ const tabs = [
   { key: 'keepalive', label: '保活', icon: HeartPulse },
   { key: 'grab', label: '抢机', icon: Target },
   { key: 'backup', label: '备份', icon: DatabaseBackup },
-  { key: 'alert', label: '告警', icon: BellRing }
+  { key: 'alert', label: '告警', icon: BellRing },
+  { key: 'metrics', label: '监控', icon: Activity }
 ] as const
 
 // ---------- 保活 ----------
@@ -219,13 +220,60 @@ async function runBackup(t: BackupTask) {
 }
 
 // ---------- 告警 / PushPlus ----------
+const cpuThreshold = ref(0)
+async function loadSettings() {
+  try {
+    const res = await automationApi.getSettings()
+    if (res.data?.trafficAlertThreshold) alertThreshold.value = res.data.trafficAlertThreshold
+    cpuThreshold.value = res.data?.cpuAlertThreshold ?? 0
+  } catch { /* 保持默认 */ }
+}
 async function saveAlert() {
   savingAlert.value = true
   try {
-    await automationApi.saveSettings({ trafficAlertThreshold: alertThreshold.value })
+    await automationApi.saveSettings({ trafficAlertThreshold: alertThreshold.value, cpuAlertThreshold: cpuThreshold.value })
     toast.success('阈值已保存')
   } catch (e: any) { toast.error(e?.message || '保存失败') } finally { savingAlert.value = false }
 }
+
+// ---------- 监控曲线 ----------
+const chartW = 600, chartH = 200, chartPad = 28
+const mConfigId = ref('')
+const mInstanceId = ref('')
+const mHours = ref(24)
+const mLoading = ref(false)
+const mInstances = ref<Array<{ value: string; label: string }>>([])
+const mChart = ref<{ time: string[]; cpu: number[]; memory: number[]; hasMemory: boolean } | null>(null)
+
+function loadMetricsInstances(cfgId: string) {
+  mInstanceId.value = ''
+  mChart.value = null
+  if (!cfgId) return
+  ociApi.detailsInstances({ configId: cfgId }).then(res => {
+    mInstances.value = (res.data || []).map((i: any) => ({ value: i.id, label: i.displayName || i.id }))
+  }).catch(() => { mInstances.value = [] })
+}
+async function loadMetrics() {
+  if (!mConfigId.value || !mInstanceId.value) return
+  mLoading.value = true
+  try {
+    const res = await automationApi.getCpuMemory({ configId: mConfigId.value, instanceId: mInstanceId.value, hours: mHours.value })
+    mChart.value = res.data || null
+  } catch (e: any) { toast.error(e?.message || '查询失败') } finally { mLoading.value = false }
+}
+const cpuPoints = computed(() => pointsOf(mChart.value?.cpu))
+const memPoints = computed(() => pointsOf(mChart.value?.memory))
+function pointsOf(arr?: number[]): string {
+  if (!arr || arr.length === 0) return ''
+  const n = arr.length
+  const w = chartW - chartPad * 2, h = chartH - chartPad * 2
+  return arr.map((v, i) => {
+    const x = chartPad + (n === 1 ? w / 2 : (i / (n - 1)) * w)
+    const y = chartPad + h - Math.min(v, 100) / 100 * h
+    return `${x.toFixed(1)},${y.toFixed(1)}`
+  }).join(' ')
+}
+
 async function savePushplus() {
   try {
     await automationApi.savePushplus({ token: ppToken.value })
@@ -244,6 +292,7 @@ async function testPushplus() {
 
 onMounted(async () => {
   await loadAll()
+  await loadSettings()
   try {
     const res = await automationApi.getPushplus()
     ppMasked.value = res.data?.tokenMasked || ''
@@ -412,6 +461,65 @@ const statusBadge = (t: { enabled?: boolean; status?: string }) =>
             </div>
           </div>
           <p v-if="!quota.length" class="text-center text-sm text-muted-foreground py-4">暂无配置</p>
+        </CardContent>
+      </Card>
+
+      <!-- CPU 阈值告警 -->
+      <Card>
+        <CardHeader class="pb-2"><CardTitle class="text-base">CPU 阈值告警</CardTitle></CardHeader>
+        <CardContent class="space-y-3">
+          <p class="text-xs text-muted-foreground">每 15 分钟检查一次全部运行中实例的近 1 小时 CPU 均值，超阈值推送告警（每实例每小时最多一次）。设为 0 = 关闭。</p>
+          <div class="flex items-center gap-3">
+            <Input type="number" v-model.number="cpuThreshold" min="0" max="100" class="w-24" />
+            <span class="text-sm text-muted-foreground">% CPU 均值告警（0 关闭）</span>
+          </div>
+          <Button size="sm" :disabled="savingAlert" @click="saveAlert">保存阈值</Button>
+        </CardContent>
+      </Card>
+    </template>
+
+    <!-- ============ 监控曲线 ============ -->
+    <template v-if="activeTab === 'metrics'">
+      <Card>
+        <CardHeader class="pb-2"><CardTitle class="text-base">CPU / 内存监控曲线</CardTitle></CardHeader>
+        <CardContent class="space-y-3">
+          <select v-model="mConfigId" class="w-full h-10 rounded-md border bg-background px-3 text-sm" @change="loadMetricsInstances(mConfigId)">
+            <option value="" disabled>选择 OCI 配置</option>
+            <option v-for="c in configs" :key="c.id" :value="c.id">{{ c.username }}</option>
+          </select>
+          <select v-model="mInstanceId" class="w-full h-10 rounded-md border bg-background px-3 text-sm">
+            <option value="" disabled>选择实例</option>
+            <option v-for="i in mInstances" :key="i.value" :value="i.value">{{ i.label }}</option>
+          </select>
+          <div class="flex items-center gap-2">
+            <select v-model.number="mHours" class="h-10 rounded-md border bg-background px-3 text-sm">
+              <option :value="6">近 6 小时</option>
+              <option :value="24">近 24 小时</option>
+              <option :value="72">近 3 天</option>
+              <option :value="168">近 7 天</option>
+            </select>
+            <Button size="sm" :disabled="mLoading || !mInstanceId" @click="loadMetrics">
+              <Loader2 v-if="mLoading" class="w-3 h-3 mr-1 animate-spin" />查询
+            </Button>
+          </div>
+
+          <div v-if="mChart" class="rounded-lg border p-3 overflow-x-auto">
+            <svg :viewBox="`0 0 ${chartW} ${chartH}`" class="w-full min-w-[320px]" style="height:180px">
+              <line v-for="g in 4" :key="g" :x1="chartPad" :x2="chartW - chartPad"
+                :y1="chartPad + (g - 1) * (chartH - chartPad * 2) / 3" :y2="chartPad + (g - 1) * (chartH - chartPad * 2) / 3"
+                stroke="currentColor" stroke-opacity="0.1" />
+              <polyline :points="cpuPoints" fill="none" stroke="#f59e0b" stroke-width="2" />
+              <polyline v-if="mChart.hasMemory" :points="memPoints" fill="none" stroke="#3b82f6" stroke-width="2" stroke-dasharray="4 3" />
+            </svg>
+            <div class="flex justify-between text-[10px] text-muted-foreground mt-1">
+              <span>{{ mChart.time[0] }}</span><span>{{ mChart.time[mChart.time.length - 1] }}</span>
+            </div>
+            <div class="flex gap-4 text-xs mt-2">
+              <span class="flex items-center gap-1"><i class="inline-block w-3 h-0.5 bg-amber-500" />CPU%</span>
+              <span v-if="mChart.hasMemory" class="flex items-center gap-1"><i class="inline-block w-3 h-0.5 bg-blue-500" />内存%</span>
+            </div>
+          </div>
+          <p v-else class="text-center text-sm text-muted-foreground py-6">选择配置和实例后点查询</p>
         </CardContent>
       </Card>
     </template>

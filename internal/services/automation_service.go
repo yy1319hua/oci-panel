@@ -25,6 +25,8 @@ type AutomationService struct {
         stopChan chan struct{}
         running  bool
         mutex    sync.Mutex
+        // lastCpuCheck 上次 CPU 告警检查时间（CPU 指标查询成本高，15 分钟一次）
+        lastCpuCheck time.Time
 }
 
 func NewAutomationService(oci *OCIService, telegram *TelegramService) *AutomationService {
@@ -122,6 +124,16 @@ func (s *AutomationService) tick() {
 
         // ---- 流量超额告警 ----（只读本地缓存，不打 OCI API，每分钟检查无压力）
         s.CheckTrafficAlerts()
+        // ---- CPU/内存阈值告警 ----（每 15 分钟实际执行一次，查询监控指标）
+        s.mutex.Lock()
+        lastCpuCheck := s.lastCpuCheck
+        s.mutex.Unlock()
+        if lastCpuCheck.IsZero() || time.Since(lastCpuCheck) >= 15*time.Minute {
+                s.mutex.Lock()
+                s.lastCpuCheck = time.Now()
+                s.mutex.Unlock()
+                go s.CheckCpuAlerts()
+        }
 }
 
 func maxInt(a, b int) int {
@@ -599,4 +611,83 @@ func (s *AutomationService) GetCpuMemoryMetrics(userID, instanceId string, hours
                 return nil, err
         }
         return s.oci.GetCpuMemoryMetrics(context.Background(), &user, instanceId, hours)
+}
+
+// ======================= CPU/内存阈值告警 =======================
+
+// cpuAlertThreshold CPU 告警阈值（百分比），0=关闭。存 sys_setting（key: cpu_alert_threshold）。
+func (s *AutomationService) cpuAlertThreshold() float64 {
+        var setting models.SysSetting
+        if err := database.GetDB().Where("`key` = ?", "cpu_alert_threshold").First(&setting).Error; err == nil {
+                var v float64
+                if err := json.Unmarshal([]byte(setting.Value), &v); err == nil && v > 0 && v <= 100 {
+                        return v
+                }
+        }
+        return 0 // 默认关闭
+}
+
+// CheckCpuAlerts 检查全部配置下实例的近 1 小时 CPU（及内存，若 agent 插件开启）均值，
+// 超过阈值则推送告警。每个实例每小时最多告警一次；无实例或未启用阈值时直接跳过。
+// 由调度 tick 每 15 分钟触发一次（CPU 指标查询成本高于流量，控制频率）。
+func (s *AutomationService) CheckCpuAlerts() {
+        threshold := s.cpuAlertThreshold()
+        if threshold <= 0 {
+                return
+        }
+        db := database.GetDB()
+        var configs []models.OciUser
+        db.Find(&configs)
+
+        hourKey := time.Now().Format("2006-01-02-15")
+        for _, cfg := range configs {
+                var cache models.OciConfigCache
+                if err := db.Where("config_id = ?", cfg.ID).First(&cache).Error; err != nil || cache.InstancesData == "" {
+                        continue
+                }
+                var infos []models.InstanceInfo
+                if err := json.Unmarshal([]byte(cache.InstancesData), &infos); err != nil {
+                        continue
+                }
+                for _, in := range infos {
+                        if in.State != "RUNNING" {
+                                continue
+                        }
+                        stateKey := "cpu_alert_state:" + cfg.ID + ":" + in.ID
+                        var st models.SysSetting
+                        if err := db.Where("`key` = ?", stateKey).First(&st).Error; err == nil && strings.Contains(st.Value, hourKey) {
+                                continue // 本小时已告警过
+                        }
+                        m, err := s.GetCpuMemoryMetrics(cfg.ID, in.ID, 1)
+                        if err != nil || len(m.Cpu) == 0 {
+                                continue
+                        }
+                        // 取近 1 小时均值
+                        var sum float64
+                        for _, v := range m.Cpu {
+                                sum += v
+                        }
+                        avg := sum / float64(len(m.Cpu))
+                        if avg < threshold {
+                                continue
+                        }
+                        msg := fmt.Sprintf("配置: %s\n实例: %s\n近1小时CPU均值: %.1f%%（阈值 %.0f%%）",
+                                cfg.TenantName, in.DisplayName, avg, threshold)
+                        if m.HasMemory && len(m.Memory) > 0 {
+                                var msum float64
+                                for _, v := range m.Memory {
+                                        msum += v
+                                }
+                                msg += fmt.Sprintf("\n近1小时内存均值: %.1f%%", msum/float64(len(m.Memory)))
+                        }
+                        s.notify("🔥 CPU 高负载告警", msg)
+                        // 标记本小时已告警
+                        var saved models.SysSetting
+                        if err := db.Where("`key` = ?", stateKey).First(&saved).Error; err != nil {
+                                saved = models.SysSetting{ID: uuid.New().String(), Key: stateKey}
+                        }
+                        saved.Value = hourKey
+                        db.Save(&saved)
+                }
+        }
 }

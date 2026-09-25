@@ -102,6 +102,7 @@ func Setup(r *gin.Engine, cfg *config.Config) *Services {
                 automation.GET("/backup/volumes", autoCtrl.ListVolumes)
                 // 告警 / 配额
                 automation.GET("/quota", autoCtrl.GetQuota)
+                automation.GET("/settings", autoCtrl.GetSettings)
                 automation.POST("/settings", autoCtrl.SaveSettings)
                 automation.POST("/alert/clear", autoCtrl.ClearAlertState)
                 automation.POST("/metrics/cpu-memory", autoCtrl.GetCpuMemory)
