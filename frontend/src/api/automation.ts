@@ -64,35 +64,35 @@ export interface QuotaOverview {
 
 export const automationApi = {
   // 保活
-  listKeepalive: () => get<KeepaliveTask[]>('/api/automation/keepalive/list'),
-  saveKeepalive: (data: Partial<KeepaliveTask>) => post('/api/automation/keepalive/save', data),
-  deleteKeepalive: (id: number) => post('/api/automation/keepalive/delete', { id }),
-  runKeepalive: (id: number) => post('/api/automation/keepalive/run', { id }),
+  listKeepalive: () => get<KeepaliveTask[]>('/automation/keepalive/list'),
+  saveKeepalive: (data: Partial<KeepaliveTask>) => post('/automation/keepalive/save', data),
+  deleteKeepalive: (id: number) => post('/automation/keepalive/delete', { id }),
+  runKeepalive: (id: number) => post('/automation/keepalive/run', { id }),
   // 抢机
-  listGrab: () => get<GrabTask[]>('/api/automation/grab/list'),
-  saveGrab: (data: Partial<GrabTask>) => post('/api/automation/grab/save', data),
-  deleteGrab: (id: number) => post('/api/automation/grab/delete', { id }),
-  runGrab: (id: number) => post('/api/automation/grab/run', { id }),
+  listGrab: () => get<GrabTask[]>('/automation/grab/list'),
+  saveGrab: (data: Partial<GrabTask>) => post('/automation/grab/save', data),
+  deleteGrab: (id: number) => post('/automation/grab/delete', { id }),
+  runGrab: (id: number) => post('/automation/grab/run', { id }),
   // 备份
-  listBackup: () => get<BackupTask[]>('/api/automation/backup/list'),
-  saveBackup: (data: Partial<BackupTask>) => post('/api/automation/backup/save', data),
-  deleteBackup: (id: number) => post('/api/automation/backup/delete', { id }),
-  runBackup: (id: number) => post('/api/automation/backup/run', { id }),
+  listBackup: () => get<BackupTask[]>('/automation/backup/list'),
+  saveBackup: (data: Partial<BackupTask>) => post('/automation/backup/save', data),
+  deleteBackup: (id: number) => post('/automation/backup/delete', { id }),
+  runBackup: (id: number) => post('/automation/backup/run', { id }),
   listVolumes: (configId: string) => get<Array<{ id: string; name: string; type: string; sizeGB: number }>>(
     `/api/automation/backup/volumes?configId=${encodeURIComponent(configId)}`
   ),
   // 告警 / 配额 / 推送设置
-  getQuota: () => get<QuotaOverview[]>('/api/automation/quota'),
-  saveSettings: (data: { trafficAlertThreshold: number }) => post('/api/automation/settings', data),
+  getQuota: () => get<QuotaOverview[]>('/automation/quota'),
+  saveSettings: (data: { trafficAlertThreshold: number }) => post('/automation/settings', data),
   clearAlert: (configId = '') => post(`/api/automation/alert/clear?configId=${encodeURIComponent(configId)}`, {}),
   getCpuMemory: (data: { configId: string; instanceId: string; hours: number }) =>
     post<{ time: string[]; cpu: number[]; memory: number[]; hasMemory: boolean }>(
-      '/api/automation/metrics/cpu-memory', data
+      '/automation/metrics/cpu-memory', data
     ),
   // PushPlus
-  getPushplus: () => get<{ enabled: boolean; tokenMasked: string }>('/api/automation/pushplus/get'),
-  savePushplus: (data: { token: string }) => post('/api/automation/pushplus/save', data),
-  testPushplus: () => post('/api/automation/pushplus/test', {})
+  getPushplus: () => get<{ enabled: boolean; tokenMasked: string }>('/automation/pushplus/get'),
+  savePushplus: (data: { token: string }) => post('/automation/pushplus/save', data),
+  testPushplus: () => post('/automation/pushplus/test', {})
 }
 
 /** 抢机表单下拉数据（AD / 镜像 / 子网）。 */
