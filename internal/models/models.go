@@ -1,249 +1,252 @@
 package models
 
 import (
-	"time"
+        "time"
 
-	"gorm.io/gorm"
+        "gorm.io/gorm"
 )
 
 type OciUser struct {
-	ID               string     `gorm:"primaryKey;column:id" json:"id"`
-	Username         string     `gorm:"column:username" json:"username"`
-	TenantName       string     `gorm:"column:tenant_name" json:"tenantName"`
-	TenantCreateTime *time.Time `gorm:"column:tenant_create_time" json:"tenantCreateTime"`
-	OciTenantID      string     `gorm:"column:oci_tenant_id" json:"ociTenantId"`
-	OciUserID        string     `gorm:"column:oci_user_id" json:"ociUserId"`
-	OciFingerprint   string     `gorm:"column:oci_fingerprint" json:"ociFingerprint"`
-	OciRegion        string     `gorm:"column:oci_region" json:"ociRegion"`
-	OciKeyPath       string     `gorm:"column:oci_key_path" json:"ociKeyPath"`
-	CreateTime       time.Time  `gorm:"column:create_time;autoCreateTime" json:"createTime"`
+        ID               string     `gorm:"primaryKey;column:id" json:"id"`
+        Username         string     `gorm:"column:username" json:"username"`
+        TenantName       string     `gorm:"column:tenant_name" json:"tenantName"`
+        TenantCreateTime *time.Time `gorm:"column:tenant_create_time" json:"tenantCreateTime"`
+        OciTenantID      string     `gorm:"column:oci_tenant_id" json:"ociTenantId"`
+        OciUserID        string     `gorm:"column:oci_user_id" json:"ociUserId"`
+        OciFingerprint   string     `gorm:"column:oci_fingerprint" json:"ociFingerprint"`
+        OciRegion        string     `gorm:"column:oci_region" json:"ociRegion"`
+        OciKeyPath       string     `gorm:"column:oci_key_path" json:"ociKeyPath"`
+        CreateTime       time.Time  `gorm:"column:create_time;autoCreateTime" json:"createTime"`
 }
 
 // OciUserListResponse 配置列表响应
 type OciUserListResponse struct {
-	ID               string `json:"id"`
-	Username         string `json:"username"`
-	TenantName       string `json:"tenantName"`
-	TenantCreateTime string `json:"tenantCreateTime"`
-	OciTenantID      string `json:"ociTenantId"`
-	OciRegion        string `json:"ociRegion"`
-	CreateTime       string `json:"createTime"`
-	InstanceCount    int    `json:"instanceCount"`
-	RunningInstances int    `json:"runningInstances"`
+        ID               string `json:"id"`
+        Username         string `json:"username"`
+        TenantName       string `json:"tenantName"`
+        TenantCreateTime string `json:"tenantCreateTime"`
+        OciTenantID      string `json:"ociTenantId"`
+        OciRegion        string `json:"ociRegion"`
+        CreateTime       string `json:"createTime"`
+        InstanceCount    int    `json:"instanceCount"`
+        RunningInstances int    `json:"runningInstances"`
 }
 
 // OciConfigDetails 配置详情响应
 type OciConfigDetails struct {
-	UserID      string         `json:"userId"`
-	Username    string         `json:"username"`
-	TenantID    string         `json:"tenantId"`
-	TenantName  string         `json:"tenantName"`
-	Fingerprint string         `json:"fingerprint"`
-	KeyPath     string         `json:"keyPath"`
-	Region      string         `json:"region"`
-	CreateTime  string         `json:"createTime"`
-	Instances   []InstanceInfo `json:"instances"`
-	Volumes     []VolumeInfo   `json:"volumes"`
-	VCNs        []VCNInfo      `json:"vcns"`
+        UserID      string         `json:"userId"`
+        Username    string         `json:"username"`
+        TenantID    string         `json:"tenantId"`
+        TenantName  string         `json:"tenantName"`
+        Fingerprint string         `json:"fingerprint"`
+        KeyPath     string         `json:"keyPath"`
+        Region      string         `json:"region"`
+        CreateTime  string         `json:"createTime"`
+        Instances   []InstanceInfo `json:"instances"`
+        Volumes     []VolumeInfo   `json:"volumes"`
+        VCNs        []VCNInfo      `json:"vcns"`
 }
 
 // InstanceInfo 实例信息
 type InstanceInfo struct {
-	ID                 string     `json:"id"`
-	DisplayName        string     `json:"displayName"`
-	State              string     `json:"state"`
-	Shape              string     `json:"shape"`
-	Ocpus              float32    `json:"ocpus"`
-	Memory             float32    `json:"memory"`
-	PublicIPs          []string   `json:"publicIps"`
-	PrivateIPs         []string   `json:"privateIps"`
-	IPv6               string     `json:"ipv6"`
-	Region             string     `json:"region"`
-	AvailabilityDomain string     `json:"availabilityDomain"`
-	BootVolumeSize     int64      `json:"bootVolumeSize"`
-	BootVolumeVpu      int64      `json:"bootVolumeVpu"`
-	ImageName          string     `json:"imageName"`
-	CreateTime         string     `json:"createTime"`
-	VnicList           []VnicInfo `json:"vnicList"`
+        ID                 string     `json:"id"`
+        DisplayName        string     `json:"displayName"`
+        State              string     `json:"state"`
+        Shape              string     `json:"shape"`
+        Ocpus              float32    `json:"ocpus"`
+        Memory             float32    `json:"memory"`
+        PublicIPs          []string   `json:"publicIps"`
+        PrivateIPs         []string   `json:"privateIps"`
+        IPv6               string     `json:"ipv6"`
+        Region             string     `json:"region"`
+        AvailabilityDomain string     `json:"availabilityDomain"`
+        BootVolumeSize     int64      `json:"bootVolumeSize"`
+        BootVolumeVpu      int64      `json:"bootVolumeVpu"`
+        ImageName          string     `json:"imageName"`
+        CreateTime         string     `json:"createTime"`
+        VnicList           []VnicInfo `json:"vnicList"`
 }
 
 // VnicInfo VNIC信息
 type VnicInfo struct {
-	VnicID    string `json:"vnicId"`
-	Name      string `json:"name"`
-	PublicIP  string `json:"publicIp"`
-	PrivateIP string `json:"privateIp"`
-	SubnetID  string `json:"subnetId"`
+        VnicID    string `json:"vnicId"`
+        Name      string `json:"name"`
+        PublicIP  string `json:"publicIp"`
+        PrivateIP string `json:"privateIp"`
+        SubnetID  string `json:"subnetId"`
 }
 
 // VolumeInfo 卷信息
 type VolumeInfo struct {
-	ID                 string `json:"id"`
-	DisplayName        string `json:"displayName"`
-	SizeInGBs          int64  `json:"sizeInGBs"`
-	VpusPerGB          int64  `json:"vpusPerGB"`
-	State              string `json:"state"`
-	AvailabilityDomain string `json:"availabilityDomain"`
-	InstanceName       string `json:"instanceName"`
-	Attached           bool   `json:"attached"`
-	CreateTime         string `json:"createTime"`
+        ID                 string `json:"id"`
+        DisplayName        string `json:"displayName"`
+        SizeInGBs          int64  `json:"sizeInGBs"`
+        VpusPerGB          int64  `json:"vpusPerGB"`
+        State              string `json:"state"`
+        AvailabilityDomain string `json:"availabilityDomain"`
+        InstanceName       string `json:"instanceName"`
+        Attached           bool   `json:"attached"`
+        CreateTime         string `json:"createTime"`
 }
 
 // VCNInfo VCN信息
 type VCNInfo struct {
-	ID          string       `json:"id"`
-	DisplayName string       `json:"displayName"`
-	CIDRBlock   string       `json:"cidrBlock"`
-	State       string       `json:"state"`
-	CreateTime  string       `json:"createTime"`
-	Subnets     []SubnetInfo `json:"subnets"`
+        ID          string       `json:"id"`
+        DisplayName string       `json:"displayName"`
+        CIDRBlock   string       `json:"cidrBlock"`
+        State       string       `json:"state"`
+        CreateTime  string       `json:"createTime"`
+        Subnets     []SubnetInfo `json:"subnets"`
 }
 
 // SubnetInfo 子网信息
 type SubnetInfo struct {
-	ID                 string `json:"id"`
-	DisplayName        string `json:"displayName"`
-	CIDRBlock          string `json:"cidrBlock"`
-	AvailabilityDomain string `json:"availabilityDomain"`
-	State              string `json:"state"`
-	IsPublic           bool   `json:"isPublic"`
+        ID                 string `json:"id"`
+        DisplayName        string `json:"displayName"`
+        CIDRBlock          string `json:"cidrBlock"`
+        AvailabilityDomain string `json:"availabilityDomain"`
+        State              string `json:"state"`
+        IsPublic           bool   `json:"isPublic"`
 }
 
 // SecurityListInfo 安全列表信息
 type SecurityListInfo struct {
-	ID           string         `json:"id"`
-	DisplayName  string         `json:"displayName"`
-	VcnId        string         `json:"vcnId"`
-	IngressRules []SecurityRule `json:"ingressRules"`
-	EgressRules  []SecurityRule `json:"egressRules"`
+        ID           string         `json:"id"`
+        DisplayName  string         `json:"displayName"`
+        VcnId        string         `json:"vcnId"`
+        IngressRules []SecurityRule `json:"ingressRules"`
+        EgressRules  []SecurityRule `json:"egressRules"`
 }
 
 // SecurityRule 安全规则
 type SecurityRule struct {
-	IsStateless  bool   `json:"isStateless"`
-	Protocol     string `json:"protocol"`
-	ProtocolName string `json:"protocolName"`
-	Source       string `json:"source"`
-	Destination  string `json:"destination"`
-	PortRangeMin int    `json:"portRangeMin"`
-	PortRangeMax int    `json:"portRangeMax"`
-	IcmpType     *int   `json:"icmpType"`
-	IcmpCode     *int   `json:"icmpCode"`
-	Description  string `json:"description"`
+        IsStateless  bool   `json:"isStateless"`
+        Protocol     string `json:"protocol"`
+        ProtocolName string `json:"protocolName"`
+        Source       string `json:"source"`
+        Destination  string `json:"destination"`
+        PortRangeMin int    `json:"portRangeMin"`
+        PortRangeMax int    `json:"portRangeMax"`
+        IcmpType     *int   `json:"icmpType"`
+        IcmpCode     *int   `json:"icmpCode"`
+        Description  string `json:"description"`
 }
 
 // TenantInfo 租户详情
 type TenantInfo struct {
-	ID                   string           `json:"id"`
-	Name                 string           `json:"name"`
-	Description          string           `json:"description"`
-	HomeRegionKey        string           `json:"homeRegionKey"`
-	Regions              []string         `json:"regions"`
-	CreateTime           string           `json:"createTime"`
-	PasswordExpiresAfter int              `json:"passwordExpiresAfter"` // 密码过期天数，0表示永不过期
-	UserList             []TenantUserInfo `json:"userList"`
+        ID                   string           `json:"id"`
+        Name                 string           `json:"name"`
+        Description          string           `json:"description"`
+        HomeRegionKey        string           `json:"homeRegionKey"`
+        Regions              []string         `json:"regions"`
+        CreateTime           string           `json:"createTime"`
+        PasswordExpiresAfter int              `json:"passwordExpiresAfter"` // 密码过期天数，0表示永不过期
+        UserList             []TenantUserInfo `json:"userList"`
 }
 
 // TenantUserInfo 租户用户信息
 type TenantUserInfo struct {
-	ID                      string `json:"id"`
-	Name                    string `json:"name"`
-	Email                   string `json:"email"`
-	State                   string `json:"state"`
-	EmailVerified           bool   `json:"emailVerified"`
-	IsMfaActivated          bool   `json:"isMfaActivated"`
-	CreateTime              string `json:"createTime"`
-	LastSuccessfulLoginTime string `json:"lastSuccessfulLoginTime"`
+        ID                      string `json:"id"`
+        Name                    string `json:"name"`
+        Email                   string `json:"email"`
+        State                   string `json:"state"`
+        EmailVerified           bool   `json:"emailVerified"`
+        IsMfaActivated          bool   `json:"isMfaActivated"`
+        CreateTime              string `json:"createTime"`
+        LastSuccessfulLoginTime string `json:"lastSuccessfulLoginTime"`
 }
 
 // TrafficData 流量数据
 type TrafficData struct {
-	Time     []string `json:"time"`
-	Inbound  []string `json:"inbound"`
-	Outbound []string `json:"outbound"`
+        Time     []string `json:"time"`
+        Inbound  []string `json:"inbound"`
+        Outbound []string `json:"outbound"`
 }
 
 // TrafficCondition 流量查询条件
 type TrafficCondition struct {
-	Regions   []ValueLabel `json:"regions"`
-	Instances []ValueLabel `json:"instances"`
+        Regions   []ValueLabel `json:"regions"`
+        Instances []ValueLabel `json:"instances"`
 }
 
 // ValueLabel 值标签对
 type ValueLabel struct {
-	Value string `json:"value"`
-	Label string `json:"label"`
+        Value string `json:"value"`
+        Label string `json:"label"`
 }
 
 func (OciUser) TableName() string {
-	return "oci_user"
+        return "oci_user"
 }
 
 // SysSetting 系统设置表
 type SysSetting struct {
-	ID    string `gorm:"primaryKey;column:id" json:"id"`
-	Key   string `gorm:"column:key;uniqueIndex;not null" json:"key"`
-	Value string `gorm:"column:value;type:text" json:"value"`
+        ID    string `gorm:"primaryKey;column:id" json:"id"`
+        Key   string `gorm:"column:key;uniqueIndex;not null" json:"key"`
+        Value string `gorm:"column:value;type:text" json:"value"`
 }
 
 func (SysSetting) TableName() string {
-	return "sys_setting"
+        return "sys_setting"
 }
 
 // OciConfigCache 配置缓存表
 type OciConfigCache struct {
-	ID               string `gorm:"primaryKey;column:id" json:"id"`
-	ConfigID         string `gorm:"column:config_id;uniqueIndex;not null" json:"configId"`
-	InstanceCount    int    `gorm:"column:instance_count;default:0" json:"instanceCount"`
-	RunningInstances int    `gorm:"column:running_instances;default:0" json:"runningInstances"`
-	InstancesData    string `gorm:"column:instances_data;type:text" json:"instancesData"`
-	VolumesData      string `gorm:"column:volumes_data;type:text" json:"volumesData"`
-	VcnsData         string `gorm:"column:vcns_data;type:text" json:"vcnsData"`
-	TenantData       string `gorm:"column:tenant_data;type:text" json:"tenantData"`
-	// TrafficData 缓存账号级月度流量统计（JSON），避免首页每次实时查询 OCI（约 10s）。
-	TrafficData string `gorm:"column:traffic_data;type:text" json:"trafficData"`
-	// TrafficUpdateTime 流量数据的独立时间戳。流量查询成本远高于其他项，
-	// 单独计时以便用更长的刷新间隔，不受整表 UpdateTime 影响。
-	TrafficUpdateTime time.Time `gorm:"column:traffic_update_time" json:"trafficUpdateTime"`
-	UpdateTime        time.Time `gorm:"column:update_time" json:"updateTime"`
+        ID               string `gorm:"primaryKey;column:id" json:"id"`
+        ConfigID         string `gorm:"column:config_id;uniqueIndex;not null" json:"configId"`
+        InstanceCount    int    `gorm:"column:instance_count;default:0" json:"instanceCount"`
+        RunningInstances int    `gorm:"column:running_instances;default:0" json:"runningInstances"`
+        InstancesData    string `gorm:"column:instances_data;type:text" json:"instancesData"`
+        VolumesData      string `gorm:"column:volumes_data;type:text" json:"volumesData"`
+        VcnsData         string `gorm:"column:vcns_data;type:text" json:"vcnsData"`
+        TenantData       string `gorm:"column:tenant_data;type:text" json:"tenantData"`
+        // TrafficData 缓存账号级月度流量统计（JSON），避免首页每次实时查询 OCI（约 10s）。
+        TrafficData string `gorm:"column:traffic_data;type:text" json:"trafficData"`
+        // TrafficUpdateTime 流量数据的独立时间戳。流量查询成本远高于其他项，
+        // 单独计时以便用更长的刷新间隔，不受整表 UpdateTime 影响。
+        TrafficUpdateTime time.Time `gorm:"column:traffic_update_time" json:"trafficUpdateTime"`
+        UpdateTime        time.Time `gorm:"column:update_time" json:"updateTime"`
 }
 
 func (OciConfigCache) TableName() string {
-	return "oci_config_cache"
+        return "oci_config_cache"
 }
 
 type ResponseData struct {
-	Code    int         `json:"code"`
-	Message string      `json:"message"`
-	Data    interface{} `json:"data,omitempty"`
+        Code    int         `json:"code"`
+        Message string      `json:"message"`
+        Data    interface{} `json:"data,omitempty"`
 }
 
 func SuccessResponse(data interface{}, message string) ResponseData {
-	if message == "" {
-		message = "success"
-	}
-	return ResponseData{
-		Code:    200,
-		Message: message,
-		Data:    data,
-	}
+        if message == "" {
+                message = "success"
+        }
+        return ResponseData{
+                Code:    200,
+                Message: message,
+                Data:    data,
+        }
 }
 
 func ErrorResponse(code int, message string) ResponseData {
-	return ResponseData{
-		Code:    code,
-		Message: message,
-	}
+        return ResponseData{
+                Code:    code,
+                Message: message,
+        }
 }
 
 func AutoMigrate(db *gorm.DB) error {
-	return db.AutoMigrate(
-		&OciUser{},
-		&SysSetting{},
-		&OciConfigCache{},
-		&AdminUser{},
-		&ApiToken{},
-		&TokenCallLog{},
-		&PasswordResetToken{},
-	)
+        return db.AutoMigrate(
+                &OciUser{},
+                &SysSetting{},
+                &OciConfigCache{},
+                &AdminUser{},
+                &ApiToken{},
+                &TokenCallLog{},
+                &PasswordResetToken{},
+                &KeepaliveTask{},
+                &GrabTask{},
+                &BackupTask{},
+        )
 }

@@ -1,56 +1,60 @@
 package main
 
 import (
-	"log"
+        "log"
 
-	"github.com/adiecho/oci-panel/internal/config"
-	"github.com/adiecho/oci-panel/internal/database"
-	"github.com/adiecho/oci-panel/internal/logger"
-	"github.com/adiecho/oci-panel/internal/middleware"
-	"github.com/adiecho/oci-panel/internal/router"
-	"github.com/adiecho/oci-panel/internal/services"
-	"github.com/gin-gonic/gin"
+        "github.com/adiecho/oci-panel/internal/config"
+        "github.com/adiecho/oci-panel/internal/database"
+        "github.com/adiecho/oci-panel/internal/logger"
+        "github.com/adiecho/oci-panel/internal/middleware"
+        "github.com/adiecho/oci-panel/internal/router"
+        "github.com/adiecho/oci-panel/internal/services"
+        "github.com/gin-gonic/gin"
 )
 
 func main() {
-	cfg := config.Load()
+        cfg := config.Load()
 
-	// 初始化分级日志器（级别来自 config.toml，并支持运行时动态调整）。
-	logger.Setup(cfg.Logging.Level)
+        // 初始化分级日志器（级别来自 config.toml，并支持运行时动态调整）。
+        logger.Setup(cfg.Logging.Level)
 
-	// 必须先初始化数据库：InitJwtSecret 在未配置密钥时会把自动生成的密钥持久化到数据库。
-	if err := database.InitDB(cfg.Database.DSN); err != nil {
-		log.Fatalf("Failed to initialize database: %v", err)
-	}
+        // 必须先初始化数据库：InitJwtSecret 在未配置密钥时会把自动生成的密钥持久化到数据库。
+        if err := database.InitDB(cfg.Database.DSN); err != nil {
+                log.Fatalf("Failed to initialize database: %v", err)
+        }
 
-	middleware.InitJwtSecret(cfg)
+        middleware.InitJwtSecret(cfg)
 
-	// 用 config.toml 中的初始账号密码创建首个管理员（若数据库为空）。
-	// 之后管理员凭据以数据库为准，支持运行时改密、邮箱重置，无需重启。
-	if err := services.SeedAdminFromConfig(cfg.Web.Account, cfg.Web.Password); err != nil {
-		log.Fatalf("Failed to seed admin user: %v", err)
-	}
+        // 用 config.toml 中的初始账号密码创建首个管理员（若数据库为空）。
+        // 之后管理员凭据以数据库为准，支持运行时改密、邮箱重置，无需重启。
+        if err := services.SeedAdminFromConfig(cfg.Web.Account, cfg.Web.Password); err != nil {
+                log.Fatalf("Failed to seed admin user: %v", err)
+        }
 
-	// 启动时清理 keys 目录中不再被任何配置引用的孤儿私钥。
-	// 注意放在 router.Setup 之前：此时局部变量 services 尚未声明，不会遮蔽包名。
-	go services.CleanupOrphanKeys()
+        // 启动时清理 keys 目录中不再被任何配置引用的孤儿私钥。
+        // 注意放在 router.Setup 之前：此时局部变量 services 尚未声明，不会遮蔽包名。
+        go services.CleanupOrphanKeys()
 
-	r := gin.Default()
-	services := router.Setup(r, cfg)
+        r := gin.Default()
+        services := router.Setup(r, cfg)
 
-	// 启动定时任务服务
-	services.Scheduler.Start()
-	defer services.Scheduler.Stop()
+        // 启动定时任务服务
+        services.Scheduler.Start()
+        defer services.Scheduler.Stop()
 
-	// 启动 Telegram Bot（如果已配置并启用）
-	_, _, tgEnabled := services.Telegram.GetConfig()
-	if tgEnabled {
-		services.Telegram.StartBot()
-		defer services.Telegram.StopBot()
-	}
+        // 启动自动化任务服务（保活/抢机/备份/流量告警）
+        services.Automation.Start()
+        defer services.Automation.Stop()
 
-	log.Printf("Server starting on port %s", cfg.Server.Port)
-	if err := r.Run(":" + cfg.Server.Port); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
-	}
+        // 启动 Telegram Bot（如果已配置并启用）
+        _, _, tgEnabled := services.Telegram.GetConfig()
+        if tgEnabled {
+                services.Telegram.StartBot()
+                defer services.Telegram.StopBot()
+        }
+
+        log.Printf("Server starting on port %s", cfg.Server.Port)
+        if err := r.Run(":" + cfg.Server.Port); err != nil {
+                log.Fatalf("Failed to start server: %v", err)
+        }
 }

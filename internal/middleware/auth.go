@@ -1,26 +1,26 @@
 package middleware
 
 import (
-	"crypto/rand"
-	"encoding/hex"
-	"log"
-	"net/http"
-	"strings"
-	"time"
+        "crypto/rand"
+        "encoding/hex"
+        "log"
+        "net/http"
+        "strings"
+        "time"
 
-	"github.com/adiecho/oci-panel/internal/config"
-	"github.com/adiecho/oci-panel/internal/database"
-	"github.com/adiecho/oci-panel/internal/models"
-	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
-	"gorm.io/gorm"
+        "github.com/adiecho/oci-panel/internal/config"
+        "github.com/adiecho/oci-panel/internal/database"
+        "github.com/adiecho/oci-panel/internal/models"
+        "github.com/gin-gonic/gin"
+        "github.com/golang-jwt/jwt/v5"
+        "gorm.io/gorm"
 )
 
 var jwtSecret []byte
 
 const (
-	jwtSecretSettingID  = "jwt_secret_id"
-	jwtSecretSettingKey = "jwt_secret"
+        jwtSecretSettingID  = "jwt_secret_id"
+        jwtSecretSettingKey = "jwt_secret"
 )
 
 // InitJwtSecret 解析并初始化 JWT 签名密钥，优先级：
@@ -32,188 +32,188 @@ const (
 // 又保证未配置密钥的部署在重启后 token 依然有效。
 // 注意：调用前必须已完成 database.InitDB。
 func InitJwtSecret(cfg *config.Config) {
-	if s := strings.TrimSpace(cfg.Web.JwtSecret); s != "" {
-		jwtSecret = []byte(s)
-		return
-	}
+        if s := strings.TrimSpace(cfg.Web.JwtSecret); s != "" {
+                jwtSecret = []byte(s)
+                return
+        }
 
-	db := database.GetDB()
-	if db != nil {
-		var setting models.SysSetting
-		if err := db.Where("key = ?", jwtSecretSettingKey).First(&setting).Error; err == nil && setting.Value != "" {
-			jwtSecret = []byte(setting.Value)
-			return
-		}
-	}
+        db := database.GetDB()
+        if db != nil {
+                var setting models.SysSetting
+                if err := db.Where("key = ?", jwtSecretSettingKey).First(&setting).Error; err == nil && setting.Value != "" {
+                        jwtSecret = []byte(setting.Value)
+                        return
+                }
+        }
 
-	secret, err := generateRandomSecret(32)
-	if err != nil {
-		log.Fatalf("failed to generate JWT secret: %v", err)
-	}
-	jwtSecret = []byte(secret)
+        secret, err := generateRandomSecret(32)
+        if err != nil {
+                log.Fatalf("failed to generate JWT secret: %v", err)
+        }
+        jwtSecret = []byte(secret)
 
-	if db != nil {
-		setting := models.SysSetting{ID: jwtSecretSettingID, Key: jwtSecretSettingKey, Value: secret}
-		if err := db.Create(&setting).Error; err != nil {
-			// 持久化失败通常意味着已存在一行（唯一索引冲突 / 并发启动）——回读并采用既有密钥，
-			// 避免使用与数据库不一致的临时密钥而让此前签发的 token 失效。
-			var existing models.SysSetting
-			if qErr := db.Where("key = ?", jwtSecretSettingKey).First(&existing).Error; qErr == nil && existing.Value != "" {
-				jwtSecret = []byte(existing.Value)
-				return
-			}
-			log.Printf("warning: failed to persist generated JWT secret (tokens will not survive restart): %v", err)
-		} else {
-			log.Printf("no web.jwt_secret configured; generated and persisted a random JWT secret to the database")
-		}
-	} else {
-		log.Printf("warning: database not initialized before InitJwtSecret; using an ephemeral JWT secret (tokens will not survive restart)")
-	}
+        if db != nil {
+                setting := models.SysSetting{ID: jwtSecretSettingID, Key: jwtSecretSettingKey, Value: secret}
+                if err := db.Create(&setting).Error; err != nil {
+                        // 持久化失败通常意味着已存在一行（唯一索引冲突 / 并发启动）——回读并采用既有密钥，
+                        // 避免使用与数据库不一致的临时密钥而让此前签发的 token 失效。
+                        var existing models.SysSetting
+                        if qErr := db.Where("key = ?", jwtSecretSettingKey).First(&existing).Error; qErr == nil && existing.Value != "" {
+                                jwtSecret = []byte(existing.Value)
+                                return
+                        }
+                        log.Printf("warning: failed to persist generated JWT secret (tokens will not survive restart): %v", err)
+                } else {
+                        log.Printf("no web.jwt_secret configured; generated and persisted a random JWT secret to the database")
+                }
+        } else {
+                log.Printf("warning: database not initialized before InitJwtSecret; using an ephemeral JWT secret (tokens will not survive restart)")
+        }
 }
 
 // generateRandomSecret 返回 n 字节的密码学随机数据的十六进制编码字符串。
 func generateRandomSecret(n int) (string, error) {
-	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
+        b := make([]byte, n)
+        if _, err := rand.Read(b); err != nil {
+                return "", err
+        }
+        return hex.EncodeToString(b), nil
 }
 
 type Claims struct {
-	Username string `json:"username"`
-	jwt.RegisteredClaims
+        Username string `json:"username"`
+        jwt.RegisteredClaims
 }
 
 func GenerateToken(username string) (string, error) {
-	claims := Claims{
-		Username: username,
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(12 * time.Hour)),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-		},
-	}
+        claims := Claims{
+                Username: username,
+                RegisteredClaims: jwt.RegisteredClaims{
+                        ExpiresAt: jwt.NewNumericDate(time.Now().Add(12 * time.Hour)),
+                        IssuedAt:  jwt.NewNumericDate(time.Now()),
+                },
+        }
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(jwtSecret)
+        token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+        return token.SignedString(jwtSecret)
 }
 
 func ParseToken(tokenString string) (*Claims, error) {
-	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
-		return jwtSecret, nil
-	}, jwt.WithValidMethods([]string{"HS256"}))
+        token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+                return jwtSecret, nil
+        }, jwt.WithValidMethods([]string{"HS256"}))
 
-	if err != nil {
-		return nil, err
-	}
+        if err != nil {
+                return nil, err
+        }
 
-	if claims, ok := token.Claims.(*Claims); ok && token.Valid {
-		return claims, nil
-	}
+        if claims, ok := token.Claims.(*Claims); ok && token.Valid {
+                return claims, nil
+        }
 
-	return nil, jwt.ErrSignatureInvalid
+        return nil, jwt.ErrSignatureInvalid
 }
 
 // publicAPIPaths 是不需要任何认证即可访问的 API 路径（登录、Passkey 登录流程等）。
 func publicAPIPaths() map[string]struct{} {
-	return map[string]struct{}{
-		"/api/sys/login":                {},
-		"/api/sys/checkMfaCode":         {},
-		"/api/sys/requestPasswordReset": {},
-		"/api/sys/resetPassword":        {},
-		"/api/passkey/status":           {},
-		"/api/passkey/beginLogin":       {},
-		"/api/passkey/finishLogin":      {},
-	}
+        return map[string]struct{}{
+                "/api/sys/login":                {},
+                "/api/sys/checkMfaCode":         {},
+                "/api/sys/requestPasswordReset": {},
+                "/api/sys/resetPassword":        {},
+                "/api/passkey/status":           {},
+                "/api/passkey/beginLogin":       {},
+                "/api/passkey/finishLogin":      {},
+        }
 }
 
 func AuthMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		path := c.Request.URL.Path
+        return func(c *gin.Context) {
+                path := c.Request.URL.Path
 
-		// 对于非API请求（前端路由页面），直接放行
-		if !strings.HasPrefix(path, "/api") {
-			c.Next()
-			return
-		}
+                // 对于非API请求（前端路由页面），直接放行
+                if !strings.HasPrefix(path, "/api") {
+                        c.Next()
+                        return
+                }
 
-		// API请求中不需要认证的路径
-		if _, ok := publicAPIPaths()[path]; ok {
-			c.Next()
-			return
-		}
+                // API请求中不需要认证的路径
+                if _, ok := publicAPIPaths()[path]; ok {
+                        c.Next()
+                        return
+                }
 
-		// 验证token
-		tokenString := c.GetHeader("Authorization")
-		if tokenString == "" || !strings.HasPrefix(tokenString, "Bearer ") {
-			c.JSON(http.StatusUnauthorized, models.ErrorResponse(401, "Unauthorized"))
-			c.Abort()
-			return
-		}
+                // 验证token
+                tokenString := c.GetHeader("Authorization")
+                if tokenString == "" || !strings.HasPrefix(tokenString, "Bearer ") {
+                        c.JSON(http.StatusUnauthorized, models.ErrorResponse(401, "Unauthorized"))
+                        c.Abort()
+                        return
+                }
 
-		raw := strings.TrimPrefix(tokenString, "Bearer ")
+                raw := strings.TrimPrefix(tokenString, "Bearer ")
 
-		// 1) 优先尝试管理员 JWT
-		if claims, err := ParseToken(raw); err == nil {
-			c.Set("username", claims.Username)
-			c.Set("authType", "jwt")
-			c.Set("readOnly", false)
-			c.Next()
-			return
-		}
+                // 1) 优先尝试管理员 JWT
+                if claims, err := ParseToken(raw); err == nil {
+                        c.Set("username", claims.Username)
+                        c.Set("authType", "jwt")
+                        c.Set("readOnly", false)
+                        c.Next()
+                        return
+                }
 
-		// 2) 退而用 API Token（后台生成、bcrypt 存储）校验，命中即等价管理员权限
-		if tok, ok := validateApiToken(raw); ok {
-			if tok.Scope == "readonly" && c.Request.Method != http.MethodGet {
-				c.JSON(http.StatusForbidden, models.ErrorResponse(403, "API token scope 'readonly' only allows GET"))
-				c.Abort()
-				return
-			}
-			c.Set("username", "api-token:"+tok.Name)
-			c.Set("authType", "apitoken")
-			c.Set("readOnly", tok.Scope == "readonly")
-			c.Set("apiTokenID", tok.ID)
-			// 记录本次调用（计次 / IP / 明细）：先暂存请求信息，待 handler 执行完
-			// （c.Next 返回、状态码确定）后再写入调用记录。
-			recordTokenCall(c, tok.ID)
-			c.Next()
-			finishTokenCall(c)
-			return
-		}
+                // 2) 退而用 API Token（后台生成、bcrypt 存储）校验，命中即等价管理员权限
+                if tok, ok := validateApiToken(raw); ok {
+                        if !apiTokenAllowed(tok.Scope, c.Request.Method, path) {
+                                c.JSON(http.StatusForbidden, models.ErrorResponse(403, "API token scope 不允许访问该接口: "+tok.Scope))
+                                c.Abort()
+                                return
+                        }
+                        c.Set("username", "api-token:"+tok.Name)
+                        c.Set("authType", "apitoken")
+                        c.Set("readOnly", tok.Scope == "readonly")
+                        c.Set("apiTokenID", tok.ID)
+                        // 记录本次调用（计次 / IP / 明细）：先暂存请求信息，待 handler 执行完
+                        // （c.Next 返回、状态码确定）后再写入调用记录。
+                        recordTokenCall(c, tok.ID)
+                        c.Next()
+                        finishTokenCall(c)
+                        return
+                }
 
-		c.JSON(http.StatusUnauthorized, models.ErrorResponse(401, "Invalid token"))
-		c.Abort()
-	}
+                c.JSON(http.StatusUnauthorized, models.ErrorResponse(401, "Invalid token"))
+                c.Abort()
+        }
 }
 
 // validateApiToken 在 api_token 表中查找与明文匹配且未过期的令牌。
 // 命中时尽力更新 last_used_at / call_count / last_used_ip（忽略错误，避免影响主流程）。
 // 注意：本函数只做哈希比对与过期判断，不导入 services 包（避免与 middleware 形成循环依赖）。
 func validateApiToken(plaintext string) (*models.ApiToken, bool) {
-	db := database.GetDB()
-	if db == nil {
-		return nil, false
-	}
-	var tokens []models.ApiToken
-	if err := db.Find(&tokens).Error; err != nil {
-		return nil, false
-	}
-	now := time.Now()
-	for i := range tokens {
-		t := tokens[i]
-		if t.ExpiresAt != nil && now.After(*t.ExpiresAt) {
-			continue
-		}
-		if VerifyPassword(t.TokenHash, plaintext) {
-			nu := time.Now()
-			db.Model(&models.ApiToken{}).Where("id = ?", t.ID).Updates(map[string]any{
-				"last_used_at": &nu,
-				"call_count":   gorm.Expr("call_count + 1"),
-			})
-			return &t, true
-		}
-	}
-	return nil, false
+        db := database.GetDB()
+        if db == nil {
+                return nil, false
+        }
+        var tokens []models.ApiToken
+        if err := db.Find(&tokens).Error; err != nil {
+                return nil, false
+        }
+        now := time.Now()
+        for i := range tokens {
+                t := tokens[i]
+                if t.ExpiresAt != nil && now.After(*t.ExpiresAt) {
+                        continue
+                }
+                if VerifyPassword(t.TokenHash, plaintext) {
+                        nu := time.Now()
+                        db.Model(&models.ApiToken{}).Where("id = ?", t.ID).Updates(map[string]any{
+                                "last_used_at": &nu,
+                                "call_count":   gorm.Expr("call_count + 1"),
+                        })
+                        return &t, true
+                }
+        }
+        return nil, false
 }
 
 // maxTokenCallLogsPerToken 是每个令牌保留的调用记录条数上限，超出后裁剪最旧记录，
@@ -224,141 +224,165 @@ const maxTokenCallLogsPerToken = 200
 // 并更新令牌的最近来源 IP。必须在调用 c.Next() 之后执行本文函数的收尾部分。
 // 这里用 c.Set 记录起始信息，由 realRecordTokenCall 在 Next 之后写入。
 func recordTokenCall(c *gin.Context, tokenID uint) {
-	c.Set("_tokCallID", tokenID)
-	c.Set("_tokCallPath", c.Request.URL.Path)
-	c.Set("_tokCallMethod", c.Request.Method)
-	c.Set("_tokCallIP", resolveClientIP(c))
+        c.Set("_tokCallID", tokenID)
+        c.Set("_tokCallPath", c.Request.URL.Path)
+        c.Set("_tokCallMethod", c.Request.Method)
+        c.Set("_tokCallIP", resolveClientIP(c))
 }
 
 // finishTokenCall 在 handler 结束后写入调用记录（状态码此时已确定）。
 // 由 AuthMiddleware 在 c.Next() 返回后调用。
 func finishTokenCall(c *gin.Context) {
-	v, ok := c.Get("_tokCallID")
-	if !ok {
-		return
-	}
-	tokenID, _ := v.(uint)
-	if tokenID == 0 {
-		return
-	}
-	path, _ := c.Get("_tokCallPath")
-	method, _ := c.Get("_tokCallMethod")
-	ip, _ := c.Get("_tokCallIP")
-	pathStr, _ := path.(string)
-	methodStr, _ := method.(string)
-	ipStr, _ := ip.(string)
-	status := c.Writer.Status()
+        v, ok := c.Get("_tokCallID")
+        if !ok {
+                return
+        }
+        tokenID, _ := v.(uint)
+        if tokenID == 0 {
+                return
+        }
+        path, _ := c.Get("_tokCallPath")
+        method, _ := c.Get("_tokCallMethod")
+        ip, _ := c.Get("_tokCallIP")
+        pathStr, _ := path.(string)
+        methodStr, _ := method.(string)
+        ipStr, _ := ip.(string)
+        status := c.Writer.Status()
 
-	db := database.GetDB()
-	if db == nil {
-		return
-	}
+        db := database.GetDB()
+        if db == nil {
+                return
+        }
 
-	// 异步写入，不阻塞响应；失败忽略。
-	go func() {
-		defer func() { _ = recover() }()
-		_ = db.Model(&models.ApiToken{}).Where("id = ?", tokenID).
-			Update("last_used_ip", ipStr).Error
-		_ = db.Create(&models.TokenCallLog{
-			TokenID:    tokenID,
-			Method:     methodStr,
-			Path:       pathStr,
-			StatusCode: status,
-			IP:         ipStr,
-		}).Error
+        // 异步写入，不阻塞响应；失败忽略。
+        go func() {
+                defer func() { _ = recover() }()
+                _ = db.Model(&models.ApiToken{}).Where("id = ?", tokenID).
+                        Update("last_used_ip", ipStr).Error
+                _ = db.Create(&models.TokenCallLog{
+                        TokenID:    tokenID,
+                        Method:     methodStr,
+                        Path:       pathStr,
+                        StatusCode: status,
+                        IP:         ipStr,
+                }).Error
 
-		// 裁剪：超过上限时删除该令牌最旧的记录。
-		var count int64
-		if err := db.Model(&models.TokenCallLog{}).Where("token_id = ?", tokenID).Count(&count).Error; err != nil {
-			return
-		}
-		if count > maxTokenCallLogsPerToken {
-			excess := count - maxTokenCallLogsPerToken
-			var olds []models.TokenCallLog
-			db.Where("token_id = ?", tokenID).Order("created_at asc").Limit(int(excess)).Find(&olds)
-			ids := make([]uint, 0, len(olds))
-			for _, o := range olds {
-				ids = append(ids, o.ID)
-			}
-			if len(ids) > 0 {
-				db.Delete(&models.TokenCallLog{}, ids)
-			}
-		}
-	}()
+                // 裁剪：超过上限时删除该令牌最旧的记录。
+                var count int64
+                if err := db.Model(&models.TokenCallLog{}).Where("token_id = ?", tokenID).Count(&count).Error; err != nil {
+                        return
+                }
+                if count > maxTokenCallLogsPerToken {
+                        excess := count - maxTokenCallLogsPerToken
+                        var olds []models.TokenCallLog
+                        db.Where("token_id = ?", tokenID).Order("created_at asc").Limit(int(excess)).Find(&olds)
+                        ids := make([]uint, 0, len(olds))
+                        for _, o := range olds {
+                                ids = append(ids, o.ID)
+                        }
+                        if len(ids) > 0 {
+                                db.Delete(&models.TokenCallLog{}, ids)
+                        }
+                }
+        }()
 }
 
 // resolveClientIP 优先取反代传入的 X-Forwarded-For 首个地址，其次 X-Real-IP，
 // 最后 c.ClientIP()（gin 已解析 RemoteAddr）。
 func resolveClientIP(c *gin.Context) string {
-	if xff := c.GetHeader("X-Forwarded-For"); xff != "" {
-		if idx := strings.IndexByte(xff, ','); idx >= 0 {
-			return strings.TrimSpace(xff[:idx])
-		}
-		return strings.TrimSpace(xff)
-	}
-	if xri := c.GetHeader("X-Real-IP"); xri != "" {
-		return strings.TrimSpace(xri)
-	}
-	return c.ClientIP()
+        if xff := c.GetHeader("X-Forwarded-For"); xff != "" {
+                if idx := strings.IndexByte(xff, ','); idx >= 0 {
+                        return strings.TrimSpace(xff[:idx])
+                }
+                return strings.TrimSpace(xff)
+        }
+        if xri := c.GetHeader("X-Real-IP"); xri != "" {
+                return strings.TrimSpace(xri)
+        }
+        return c.ClientIP()
 }
 
 // RequireAdmin 仅允许由管理员 JWT 调用的路由（如令牌管理接口）使用，
 // 拒绝任何 API Token，防止用一把 API Key 去增删其它 API Key。
 func RequireAdmin() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if c.GetString("authType") != "jwt" {
-			c.JSON(http.StatusForbidden, models.ErrorResponse(403, "Admin token required"))
-			c.Abort()
-			return
-		}
-		c.Next()
-	}
+        return func(c *gin.Context) {
+                if c.GetString("authType") != "jwt" {
+                        c.JSON(http.StatusForbidden, models.ErrorResponse(403, "Admin token required"))
+                        c.Abort()
+                        return
+                }
+                c.Next()
+        }
 }
 
 // RequestBodyLimit bounds every HTTP request body before handlers parse JSON or
 // multipart data. Individual upload handlers may apply a smaller limit.
 func RequestBodyLimit(maxBytes int64) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if c.Request.Body != nil {
-			c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBytes)
-		}
-		c.Next()
-	}
+        return func(c *gin.Context) {
+                if c.Request.Body != nil {
+                        c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBytes)
+                }
+                c.Next()
+        }
 }
 
 // CORS 返回跨域中间件。仅当请求 Origin 命中白名单时才回显该 Origin 并允许携带凭证，
 // 避免此前 "Access-Control-Allow-Origin: * + Allow-Credentials: true" 的非法且不安全组合。
 // 白名单为空时不下发任何 ACAO 头（同源请求不受影响，生产环境前端由本服务同源托管）。
 func CORS(allowedOrigins []string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		origin := c.GetHeader("Origin")
-		if origin != "" && originAllowed(origin, allowedOrigins) {
-			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
-			c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
-			c.Writer.Header().Add("Vary", "Origin")
-		}
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE")
+        return func(c *gin.Context) {
+                origin := c.GetHeader("Origin")
+                if origin != "" && originAllowed(origin, allowedOrigins) {
+                        c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+                        c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+                        c.Writer.Header().Add("Vary", "Origin")
+                }
+                c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
+                c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE")
 
-		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(204)
-			return
-		}
+                if c.Request.Method == "OPTIONS" {
+                        c.AbortWithStatus(204)
+                        return
+                }
 
-		c.Next()
-	}
+                c.Next()
+        }
 }
 
 // originAllowed 判断请求 Origin 是否被允许（大小写不敏感的精确匹配）。
 // 若白名单包含 "*"，则反射回具体 Origin（而非字面量 "*"），从而与凭证模式兼容。
 func originAllowed(origin string, allowed []string) bool {
-	for _, a := range allowed {
-		if a == "*" {
-			return true
-		}
-		if strings.EqualFold(strings.TrimSpace(a), origin) {
-			return true
-		}
+        for _, a := range allowed {
+                if a == "*" {
+                        return true
+                }
+                if strings.EqualFold(strings.TrimSpace(a), origin) {
+                        return true
+                }
+        }
+        return false
+}
+
+// apiTokenScopeRules 定义 API Token 的权限细分规则（按路径前缀 + 方法匹配）。
+//
+// scope 取值：
+//   full     — 全部接口（默认，兼容旧行为）
+//   readonly — 仅 GET，可查看任意数据但不可做任何操作
+//   instance — 实例操作类（/api/instance/*、/api/oci/instance 相关）
+//   traffic  — 流量/费用查询类（/api/oci/traffic/*、/api/oci/vcn/*）
+func apiTokenAllowed(scope, method, path string) bool {
+	switch scope {
+	case "full", "":
+		return true
+	case "readonly":
+		return method == http.MethodGet
+	case "instance":
+		return strings.HasPrefix(path, "/api/instance/")
+	case "traffic":
+		return strings.HasPrefix(path, "/api/oci/traffic/") ||
+			strings.HasPrefix(path, "/api/oci/vcn/")
+	default:
+		// 未知 scope 一律拒绝，避免旧数据语义漂移后误放行。
+		return false
 	}
-	return false
 }

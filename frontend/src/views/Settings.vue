@@ -120,7 +120,7 @@ const tokens = ref<ApiToken[]>([])
 const tokensLoading = ref(false)
 const createOpen = ref(false)
 const creating = ref(false)
-const createForm = ref({ name: '', expiresInDays: 0 })
+const createForm = ref({ name: '', expiresInDays: 0, scope: 'full' })
 const newToken = ref<CreateTokenResult | null>(null)
 const copied = ref(false)
 const revokingId = ref<number | null>(null)
@@ -176,7 +176,7 @@ const loadTokens = async () => {
 }
 
 const openCreate = () => {
-  createForm.value = { name: '', expiresInDays: 0 }
+  createForm.value = { name: '', expiresInDays: 0, scope: 'full' }
   newToken.value = null
   copied.value = false
   createOpen.value = true
@@ -191,7 +191,8 @@ const createToken = async () => {
   try {
     const response = await tokenApi.create({
       name: createForm.value.name.trim(),
-      expiresInDays: Number(createForm.value.expiresInDays) || 0
+      expiresInDays: Number(createForm.value.expiresInDays) || 0,
+      scope: createForm.value.scope
     })
     if (response.data) {
       newToken.value = response.data
@@ -1153,6 +1154,15 @@ const systemInfo = computed(() => [
           <div>
             <label class="text-sm font-medium mb-2 block">名称</label>
             <Input v-model="createForm.name" placeholder="例如：我的机器人" @keyup.enter="createToken" />
+          </div>
+          <div>
+            <label class="text-sm font-medium mb-2 block">权限范围</label>
+            <select v-model="createForm.scope" class="w-full h-10 rounded-md border bg-background px-3 text-sm">
+              <option value="full">full — 全部接口（默认）</option>
+              <option value="readonly">readonly — 仅查看（只允许 GET）</option>
+              <option value="instance">instance — 仅实例操作</option>
+              <option value="traffic">traffic — 仅流量/费用查询</option>
+            </select>
           </div>
           <div>
             <label class="text-sm font-medium mb-2 block">过期时间</label>

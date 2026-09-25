@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { Copy, Check, KeyRound, Server, Globe, Terminal, Lock, Unlock, ArrowLeft, Cloud } from 'lucide-vue-next'
+import { Copy, Check, KeyRound, Server, Globe, Terminal, Lock, Unlock, ArrowLeft, Cloud, Workflow } from 'lucide-vue-next'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -90,6 +90,36 @@ const groups: ApiGroup[] = [
       { method: 'POST', path: '/api/oci/traffic/data', desc: '单实例 VNIC 流量明细（按时间区间查询）', auth: 'token', body: '{"configId":"1","instanceId":"ocid1.instance.oc1..","vnicId":"ocid1.vnic.oc1..","startTime":"2026-09-01T00:00:00Z","endTime":"2026-09-30T23:59:59Z"}' },
       { method: 'GET', path: '/api/oci/traffic/condition', desc: '流量查询条件：区域与实例列表（query 参数）', auth: 'token', body: '?configId=1' },
       { method: 'GET', path: '/api/oci/traffic/vnics', desc: '指定实例的 VNIC 列表（query 参数）', auth: 'token', body: '?configId=1&instanceId=ocid1.instance.oc1..' }
+    ]
+  },
+  {
+    name: '自动化任务',
+    icon: Workflow,
+    desc: '保活（防回收）/ 抢机（OOC 重试）/ 卷备份 / 流量告警 / 配额总览 / PushPlus 推送（v1.0.30 新增）',
+    endpoints: [
+      { method: 'GET', path: '/api/automation/keepalive/list', desc: '列出保活任务', auth: 'token' },
+      { method: 'POST', path: '/api/automation/keepalive/save', desc: '创建/更新保活任务', auth: 'token', body: '{"id":0,"configId":"1","instanceId":"ocid1.instance.oc1..","instanceName":"web","enabled":true,"intervalMin":60,"durationSec":120}' },
+      { method: 'POST', path: '/api/automation/keepalive/delete', desc: '删除保活任务', auth: 'token', body: '{"id":1}' },
+      { method: 'POST', path: '/api/automation/keepalive/run', desc: '立即执行一次保活（不等定时）', auth: 'token', body: '{"id":1}' },
+      { method: 'GET', path: '/api/automation/grab/list', desc: '列出抢机任务', auth: 'token' },
+      { method: 'POST', path: '/api/automation/grab/save', desc: '创建/更新抢机任务（形状仅限 Always Free：A1.Flex / E2.1.Micro）', auth: 'token', body: '{"id":0,"configId":"1","name":"抢首尔A1","ad":"AP-CHUNCHEON-1-AD-1","shape":"VM.Standard.A1.Flex","ocpus":2,"memoryGB":12,"bootVolumeGB":50,"imageId":"ocid1.image.oc1..","subnetId":"ocid1.subnet.oc1..","instanceName":"new-arm","intervalMin":5,"enabled":true}' },
+      { method: 'POST', path: '/api/automation/grab/delete', desc: '删除抢机任务', auth: 'token', body: '{"id":1}' },
+      { method: 'POST', path: '/api/automation/grab/run', desc: '立即尝试抢一次', auth: 'token', body: '{"id":1}' },
+      { method: 'GET', path: '/api/automation/backup/list', desc: '列出备份任务', auth: 'token' },
+      { method: 'POST', path: '/api/automation/backup/save', desc: '创建/更新备份任务（retention 硬上限 5，超出拒绝；滚动删除最旧）', auth: 'token', body: '{"id":0,"configId":"1","volumeId":"ocid1.bootvolume.oc1..","volumeName":"web-boot","retention":3,"intervalHour":24,"enabled":true}' },
+      { method: 'POST', path: '/api/automation/backup/delete', desc: '删除备份任务（不删已有备份）', auth: 'token', body: '{"id":1}' },
+      { method: 'POST', path: '/api/automation/backup/run', desc: '立即执行一次备份', auth: 'token', body: '{"id":1}' },
+      { method: 'GET', path: '/api/automation/backup/volumes', desc: '可备份的卷列表（引导卷+块卷，query 参数）', auth: 'token', body: '?configId=1' },
+      { method: 'GET', path: '/api/automation/lookup/ads', desc: '可用域下拉（query 参数）', auth: 'token', body: '?configId=1' },
+      { method: 'GET', path: '/api/automation/lookup/images', desc: '系统镜像下拉（按形状过滤，仅 AVAILABLE）', auth: 'token', body: '?configId=1&shape=VM.Standard.A1.Flex' },
+      { method: 'GET', path: '/api/automation/lookup/subnets', desc: '子网下拉（含 VCN 名标签）', auth: 'token', body: '?configId=1' },
+      { method: 'GET', path: '/api/automation/quota', desc: 'Always Free 配额总览（全部配置）', auth: 'token' },
+      { method: 'POST', path: '/api/automation/settings', desc: '保存流量告警阈值（百分比 1~100，默认 80）', auth: 'token', body: '{"trafficAlertThreshold":80}' },
+      { method: 'POST', path: '/api/automation/alert/clear', desc: '重置本月告警状态（query 参数，configId 留空清全部）', auth: 'token', body: '?configId=1' },
+      { method: 'POST', path: '/api/automation/metrics/cpu-memory', desc: '实例 CPU/内存使用率曲线（oci_computeagent，最长 168 小时）', auth: 'token', body: '{"configId":"1","instanceId":"ocid1.instance.oc1..","hours":24}' },
+      { method: 'GET', path: '/api/automation/pushplus/get', desc: '查看 PushPlus 配置状态（token 掩码返回）', auth: 'token' },
+      { method: 'POST', path: '/api/automation/pushplus/save', desc: '保存 PushPlus token（空串即关闭该通道）', auth: 'token', body: '{"token":"***"}' },
+      { method: 'POST', path: '/api/automation/pushplus/test', desc: '发送 PushPlus 测试消息', auth: 'token' }
     ]
   },
   {

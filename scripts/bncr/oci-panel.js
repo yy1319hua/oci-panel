@@ -2,14 +2,15 @@
  * @author yy1319hua
  * @name oci-panel
  * @team oci-panel
- * @version 1.0.1
- * @description 调用 oci-panel 开放 API 查询甲骨文实例状态、流量、成本。平台无关：QQ / 微信 / Telegram 均可触发。
+ * @version 1.1.0
+ * @description 调用 oci-panel 开放 API 查询甲骨文实例状态、流量、成本、自动化任务。平台无关：QQ / 微信 / Telegram 均可触发。
  * @rule ^oci$
  * @rule ^oci\s+(状态|status)$
  * @rule ^oci\s+流量$
  * @rule ^oci\s+成本$
  * @rule ^oci\s+帮助$
  * @rule ^oci\s+配置$
+ * @rule ^oci\s+(保活|抢机|备份|配额)$
  * @priority 100
  * @admin true
  * @public true
@@ -239,6 +240,70 @@ async function renderConfigs() {
   ].join('\n');
 }
 
+/* ---------- 自动化任务（v1.1.0 新增） ---------- */
+
+/** 渲染保活任务列表 */
+async function renderKeepalive() {
+  const d = await api('/automation/keepalive/list');
+  if (!d?.length) return '🫀 暂无保活任务\n在面板「自动化 → 保活」中创建';
+  return [
+    '🫀 保活任务',
+    '━━━━━━━━━━━━━━━',
+    ...d.map(t => {
+      const st = t.enabled ? '✅' : '⛔';
+      const last = t.lastRunAt ? String(t.lastRunAt).slice(5, 16).replace('T', ' ') : '从未';
+      return `${st} ${t.instanceName}\n　每${t.intervalMin}分钟 · 上次: ${last}\n　${t.lastResult || '-'}`;
+    })
+  ].join('\n');
+}
+
+/** 渲染抢机任务列表 */
+async function renderGrab() {
+  const d = await api('/automation/grab/list');
+  if (!d?.length) return '🎯 暂无抢机任务\n在面板「自动化 → 抢机」中创建';
+  return [
+    '🎯 抢机任务',
+    '━━━━━━━━━━━━━━━',
+    ...d.map(t => {
+      const st = t.status === 'success' ? '🎉 已抢到' : t.enabled ? '✅ 重试中' : '⛔';
+      const last = t.lastTryAt ? String(t.lastTryAt).slice(5, 16).replace('T', ' ') : '从未';
+      return `${st} ${t.name}（${t.shape}）\n　${t.ocpus} OCPU / ${t.memoryGB}GB · 尝试${t.tryCount || 0}次\n　上次: ${last}\n　${t.lastError || '-'}`;
+    })
+  ].join('\n');
+}
+
+/** 渲染备份任务列表 */
+async function renderBackup() {
+  const d = await api('/automation/backup/list');
+  if (!d?.length) return '💾 暂无备份任务\n在面板「自动化 → 备份」中创建';
+  return [
+    '💾 备份任务',
+    '━━━━━━━━━━━━━━━',
+    ...d.map(t => {
+      const st = t.enabled ? '✅' : '⛔';
+      const last = t.lastRunAt ? String(t.lastRunAt).slice(5, 16).replace('T', ' ') : '从未';
+      return `${st} ${t.volumeName}\n　保留${t.retention}份 · 每${t.intervalHour}小时\n　上次: ${last}\n　${t.lastResult || '-'}`;
+    })
+  ].join('\n');
+}
+
+/** 渲染 Always Free 配额总览 */
+async function renderQuota() {
+  const d = await api('/automation/quota');
+  if (!d?.length) return '📊 暂无数据';
+  return [
+    '📊 Always Free 配额总览',
+    '━━━━━━━━━━━━━━━',
+    ...d.map(q =>
+      [
+        `👤 ${q.tenantName || q.configId}（${q.region}）`,
+        `　实例: ${q.instanceCount}　A1 OCPU: ${q.a1OcpusUsed}/4　内存: ${q.a1MemoryUsed}/24GB`,
+        `　E2.Micro: ${q.e2MicroUsed}/2　引导卷: ${q.bootVolumeGB}/200GB　备份: ${q.backupCount}/5`
+      ].join('\n')
+    )
+  ].join('\n\n');
+}
+
 const HELP = `☁️ OCI 面板查询助手
 
 ━━━━━━━━━━━━━━━
@@ -246,6 +311,10 @@ oci / oci 状态 —— 全部实例概况
 oci 流量 —— 本月流量与免费额度
 oci 成本 —— 近 30 天成本
 oci 配置 —— 查看配置ID
+oci 保活 —— 保活任务状态
+oci 抢机 —— 抢机任务状态
+oci 备份 —— 备份任务状态
+oci 配额 —— Always Free 配额总览
 oci 帮助 —— 显示本说明
 
 ━━━━━━━━━━━━━━━
@@ -288,6 +357,18 @@ module.exports = async s => {
         break;
       case '配置':
         text = await renderConfigs();
+        break;
+      case '保活':
+        text = await renderKeepalive();
+        break;
+      case '抢机':
+        text = await renderGrab();
+        break;
+      case '备份':
+        text = await renderBackup();
+        break;
+      case '配额':
+        text = await renderQuota();
         break;
       case '帮助':
       case 'help':

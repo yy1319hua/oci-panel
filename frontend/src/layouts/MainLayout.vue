@@ -16,7 +16,8 @@ import {
   BookOpen,
   Monitor,
   Sun,
-  Moon
+  Moon,
+  Workflow
 } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 import { toast } from '@/composables/useToast'
@@ -43,6 +44,7 @@ const themeMeta = computed(() => THEME_META[theme.mode.value])
 const navItems = [
   { path: '/', label: '概览', icon: LayoutDashboard },
   { path: '/configs', label: '配置管理', icon: Settings2 },
+  { path: '/automation', label: '自动化', icon: Workflow },
   { path: '/logs', label: '实时日志', icon: FileText },
   { path: '/docs', label: 'API 文档', icon: BookOpen },
   { path: '/settings', label: '系统设置', icon: Settings }

@@ -5,7 +5,7 @@ export interface ApiToken {
   id: number
   name: string
   prefix: string
-  scope: 'full' | 'readonly'
+  scope: string
   expiresAt: string | null
   lastUsedAt: string | null
   callCount: number
@@ -31,7 +31,7 @@ export interface TokenCallLog {
 }
 
 export const tokenApi = {
-  create: (req: { name: string; expiresInDays?: number }) =>
+  create: (req: { name: string; expiresInDays?: number; scope?: string }) =>
     post<CreateTokenResult>('/token', req),
   list: () => get<ApiToken[]>('/token/list'),
   calls: (id: number) => get<TokenCallLog[]>(`/token/calls?id=${id}`),

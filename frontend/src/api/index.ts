@@ -27,6 +27,9 @@ export type { ApiToken, CreateTokenResult, TokenCallLog } from './token'
 
 export { instanceApi } from './instance'
 
+export { automationApi, lookupApi } from './automation'
+export type { KeepaliveTask, GrabTask, BackupTask, QuotaOverview } from './automation'
+
 export { ociApi, vcnApi } from './oci'
 export type {
   ConfigItem,
