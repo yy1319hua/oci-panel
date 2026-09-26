@@ -1,6 +1,7 @@
 package controllers
 
 import (
+        "log"
         "strconv"
 
         "github.com/adiecho/oci-panel/internal/models"
@@ -337,9 +338,14 @@ func (ctl *AutomationController) SaveSettings(c *gin.Context) {
                 var setting models.SysSetting
                 if err := db.Where("`key` = ?", key).First(&setting).Error; err != nil {
                         setting = models.SysSetting{ID: uuid.New().String(), Key: key}
+                } else if setting.ID == "" {
+                        // 历史数据可能存在空主键行：空 ID 会让 Save() 退化为 INSERT 并因主键冲突静默失败
+                        setting.ID = uuid.New().String()
                 }
                 setting.Value = strconv.FormatFloat(val, 'f', -1, 64)
-                db.Save(&setting)
+                if err := db.Save(&setting).Error; err != nil {
+                        log.Printf("save setting %s failed: %v", key, err)
+                }
         }
         saveSetting("traffic_alert_threshold", in.TrafficAlertThreshold)
         if in.CpuAlertThreshold != nil && *in.CpuAlertThreshold >= 0 && *in.CpuAlertThreshold <= 100 {
